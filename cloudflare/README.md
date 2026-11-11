@@ -1,99 +1,125 @@
-# Cloudflare webhook deployment
-
-This directory contains the Cloudflare Workers webhook runtime for the standalone Telegram bot. It is separate from the legacy bot_server.py and never imports or executes that file.
+# Cloudflare Worker + Local Bridge
 
 ## Architecture
 
-Telegram Bot API -> Cloudflare Worker -> D1 (encrypted scoped Hub credentials) -> MR_SIAVASH_HUB_AI through a controlled HTTPS tunnel.
+```text
+Telegram
+   │ HTTPS webhook
+   ▼
+Cloudflare Worker ── encrypted command jobs ──► D1
+   ▲                                         │
+   │ signed completion / reply               │ outbound polling
+   │                                         ▼
+Telegram ◄── sendMessage                 Local Bridge
+                                               │ loopback only
+                                               ▼
+                                      MR_SIAVASH_HUB_AI
+                                      http://127.0.0.1:8000
+```
 
-The Worker supports /start, /help, /id, /pair CODE, /status, and /tasks in private chats. Only the configured owner Telegram ID is accepted. /tasks requires the explicitly granted tasks:read scope; the default Hub scope should remain status:read.
+The Worker is the public Telegram edge. It does **not** connect to the Hub, store Hub access tokens, or expose the local Hub. The Local Bridge initiates outbound HTTPS requests to the Worker, then calls only the Hub's dedicated Telegram integration endpoints over loopback.
 
-No task creation, shell execution, arbitrary tool invocation, model execution, or public Hub access is enabled.
+Bridge requests use HMAC-SHA256 signatures bound to timestamp, nonce, HTTP method, path, and body digest. D1 stores nonce hashes to reject replay. Pairing commands are encrypted with AES-256-GCM before being stored in D1. Hub access and refresh credentials are stored by the local Bridge in the operating-system credential store through Python Keyring; there is no plaintext-file fallback.
 
 ## Cloudflare resources
 
-1. Create a D1 database named mr-siavash-el-ir-bot-state and execute schema.sql.
-2. Deploy worker.js as a module Worker named mr-siavash-el-ir-bot.
-3. Bind the D1 database as DB.
-4. Add a daily Cron Trigger such as 17 3 * * * to prune old webhook idempotency records.
+- Worker: `mr-siavash-el-ir-bot`
+- D1: `mr-siavash-el-ir-bot-state`
+- D1 binding: `DB`
+- Daily cleanup Cron: `17 3 * * *` UTC
+
+Apply `schema.sql` to the D1 database. It is safe to reapply because the statements use `IF NOT EXISTS`.
+
+## Worker variables and secrets
 
 Non-secret Worker variables:
-- ALLOWED_TELEGRAM_USER_ID: owner's numeric Telegram user ID.
-- HUB_API_BASE_URL: HTTPS origin of the Hub API, without a path.
-- HUB_CLIENT_ID: 3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52
+- `ALLOWED_TELEGRAM_USER_ID`: owner's numeric Telegram ID.
+- `HUB_CLIENT_ID`: stable UUID for this Telegram client; defaults to `3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52`.
 
 Worker secrets (never commit or paste into chat):
-- TELEGRAM_BOT_TOKEN: token from BotFather.
-- TELEGRAM_WEBHOOK_SECRET: random 32-64 character value using only letters, digits, underscore, and hyphen. It must match the local webhook registration setting.
-- SESSION_ENCRYPTION_KEY: base64url encoding of 32 cryptographically random bytes, without padding. It encrypts Hub access and refresh credentials before D1 storage.
+- `TELEGRAM_BOT_TOKEN`: token from BotFather.
+- `TELEGRAM_WEBHOOK_SECRET`: Telegram webhook secret-token value.
+- `QUEUE_ENCRYPTION_KEY`: base64url-encoded 32 cryptographically random bytes, without padding.
+- `BRIDGE_SHARED_SECRET`: at least 32 random characters, shared only between Worker and the local Bridge.
 
-Generate the encryption key locally:
+Generate values locally with Python:
 
 ```powershell
 py -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('='))"
+py -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-## Hub connectivity
+The first command generates the queue encryption key; the second generates a bridge shared secret. Enter them directly into the Cloudflare Worker secret store. Do not put them in Git, Telegram, or this conversation.
 
-The Hub already provides one-time Telegram pairing, short-lived access credentials, refresh credentials, revocation, audit events, and per-client scopes.
+## Local Bridge configuration
 
-Keep the Hub local-first. Do not bind it to 0.0.0.0 or expose port 8000 directly. Use a controlled HTTPS Cloudflare Tunnel origin and, where available, an Access service-token policy. Route only to the Hub API and keep its own authentication and Telegram scoped-token checks enabled. A temporary Quick Tunnel is for short tests only.
-
-The Worker calls only POST /integrations/telegram/exchange, POST /integrations/telegram/refresh, GET /integrations/telegram/status, and GET /integrations/telegram/tasks?limit=10.
-
-Create the pairing challenge from an authenticated Hub owner session, bound to the exact Telegram user ID and client ID. The code expires after five minutes and can be used once.
-
-Example PowerShell request after the Hub is running and the owner has logged in:
+1. Start MR_SIAVASH_HUB_AI locally. Keep its API bound to `127.0.0.1:8000`.
+2. In this repository, create the local environment file:
 
 ```powershell
-$telegramUserId = 123456789
-$clientId = "3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52"
-$body = @{ telegram_user_id = $telegramUserId; client_id = $clientId; label = "MR_SIAVASH_EL_IR_BOT"; scopes = @("status:read") } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri "$HubBaseUrl/integrations/telegram/pairing-challenges" -Headers @{ Authorization = "Bearer $HubOwnerAccessToken" } -ContentType "application/json" -Body $body
+Copy-Item .env.example .env
 ```
 
-Send the returned pairing_code only to your own bot in a private chat using /pair CODE. Do not put it in GitHub or a public chat.
+3. Set `TELEGRAM_OWNER_ID`, `BRIDGE_BASE_URL`, `HUB_API_BASE_URL`, and `HUB_CLIENT_ID` in `.env`. Keep `HUB_API_BASE_URL=http://127.0.0.1:8000`.
+4. Install dependencies and securely store the shared secret in the OS credential store:
 
-## Register the Telegram webhook
+```powershell
+python -m pip install -r requirements.txt
+python bridge.py --init-secret
+```
 
-After deployment and secret configuration, add these values to the local ignored .env file:
+Paste the same `BRIDGE_SHARED_SECRET` configured in Cloudflare into the hidden prompt. Python Keyring must select a working OS credential-store backend. If no trusted backend is available, the Bridge fails closed; it does not write credentials to a plaintext file.
+5. Start the Bridge:
+
+```powershell
+python bridge.py
+```
+
+The Bridge makes outbound HTTPS requests only. It does not open a listening port, create a tunnel, or bind the Hub to a public interface.
+
+## Pairing and permissions
+
+1. Send `/pairinfo` to the bot in a private Telegram chat to obtain the exact Telegram numeric ID and client UUID.
+2. In the authenticated local Hub owner UI, create a pairing challenge for those exact values and label `MR_SIAVASH_EL_IR_BOT`.
+3. Keep the initial scope to `status:read`. Do not grant task, memory, or write scopes unless a separate review explicitly requires them.
+4. Send the one-time code to the bot using `/pair CODE`. The Bridge exchanges it with the local Hub and stores the resulting credentials in OS Keyring.
+5. Use `/status`. `/tasks` remains unavailable unless the owner explicitly grants `tasks:read`.
+
+Hub access tokens expire after 15 minutes; refresh credentials expire after 30 days. The Bridge refreshes access credentials and preserves the refresh credential in the OS credential store. The Hub remains authoritative for scopes and revocation.
+
+## Telegram commands
+
+- `/start`, `/help`, `/id`, `/pairinfo`: handled at the Worker edge.
+- `/pair CODE`, `/status`, `/tasks`: encrypted/queued for the local Bridge.
+- No arbitrary shell execution, tool invocation, task creation, agent execution, approval decisions, or content publishing is exposed.
+
+## Webhook registration
+
+After Worker secrets and owner ID are configured, set these values in the ignored local `.env`:
 
 ```dotenv
-TELEGRAM_WEBHOOK_URL=https://YOUR-WORKER.workers.dev/telegram/webhook
+TELEGRAM_WEBHOOK_URL=https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev/telegram/webhook
 TELEGRAM_WEBHOOK_SECRET=the_same_secret_configured_in_cloudflare
 ```
 
-Run locally from the repository root:
+Run:
 
 ```powershell
 python scripts/register_webhook.py
 ```
 
-The helper reads TELEGRAM_BOT_TOKEN from local .env, checks the current webhook, refuses to replace a different webhook unless explicitly confirmed, registers the Worker URL, and verifies it with a read-back. It never prints the token.
+The helper checks the existing webhook and refuses to replace a different one unless `CONFIRM_REPLACE_WEBHOOK=true` is explicitly set for that registration run.
 
-If replacing a different webhook is intended, inspect it first, then set CONFIRM_REPLACE_WEBHOOK=true only for that one registration run.
+## Operational behavior and verification
 
-## Verification
+- If the local machine or Hub is offline, queued Hub commands wait in D1 until the Bridge reconnects.
+- Telegram's webhook edge can remain available independently of the local Hub.
+- The Worker authenticates the Telegram webhook secret and restricts processing to the configured owner in private chats.
+- Bridge HMAC authentication uses short timestamp windows and one-time nonces.
+- D1 stores encrypted command payloads, hashed nonces, and hashed lease tokens.
+- Delivery is at-least-once across network failure windows; an ambiguous Telegram timeout can cause a repeated reply. Update IDs and job leases prevent ordinary duplicate processing.
+- A deployed Worker is not the same as a configured bot. Verify webhook registration, local Keyring availability, owner pairing, and a real private-chat round trip before calling the service live.
 
-- GET /health returns status ok.
-- Requests without the Telegram secret-token header are rejected.
-- Messages from non-owner IDs are ignored.
-- /id returns the configured numeric ID.
-- A one-time pairing code succeeds exactly once.
-- /status returns the Hub's authenticated scoped status.
-- /tasks is denied unless tasks:read was explicitly granted.
-- D1 stores encrypted credentials; logs contain no tokens or message contents.
+## Current provisioning status
 
-## Operational limits
-
-Cloudflare Workers Free has usage limits; check current quota before relying on high-volume traffic. Hub commands are unavailable while the local machine, Hub API, or tunnel is offline. The webhook can remain online during a Hub outage, but it must report the outage rather than bypass Hub policy. A successful Worker deployment is not a verified Telegram webhook; test a real private-chat round trip before calling it live.
-## Provisioned Cloudflare resources (2026-11-11)
-
-- Worker: mr-siavash-el-ir-bot
-- Worker URL: https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev
-- D1 database: mr-siavash-el-ir-bot-state
-- D1 database ID: 2caf5405-9da6-48c0-b92f-d79ed40f2915
-- Cron cleanup schedule: 17 3 * * * (daily, UTC)
-- Worker module, D1 binding, observability settings, and D1 schema have been deployed/verified through the Cloudflare API.
-
-The Worker is provisioned but NOT operational yet: Telegram secrets, owner ID, Hub HTTPS origin, Access service-token credentials, and Telegram webhook registration are still pending. The /health endpoint was not independently verified over the public network in this session.
+The Worker subdomain, D1 database, binding, schema baseline, observability, and cleanup Cron were provisioned earlier. The Worker was refactored in this branch to the Local Bridge queue protocol. Telegram secrets, owner ID, Bridge secret, and webhook registration remain deployment gates. No live Telegram pairing or end-to-end round trip is claimed.
