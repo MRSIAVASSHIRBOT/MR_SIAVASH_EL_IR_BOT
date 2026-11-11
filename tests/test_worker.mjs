@@ -7,7 +7,7 @@ import worker, {
 
 const bridgeEnv = {
   TELEGRAM_BOT_TOKEN: "test-token",
-  TELEGRAM_WEBHOOK_SECRET: "expected-secret",
+  TELEGRAM_WEBHOOK_SECRET: "expected-secret-value-with-at-least-32-chars",
   QUEUE_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   BRIDGE_SHARED_SECRET: "this-is-a-test-bridge-secret-with-more-than-32-chars",
   ALLOWED_TELEGRAM_USER_ID: "123456789",
@@ -61,7 +61,7 @@ test("bridge endpoints reject unsigned requests before touching D1", async () =>
 test("webhook fails closed while required secrets are missing", async () => {
   const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "expected-secret" },
+    headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "expected-secret-value-with-at-least-32-chars" },
     body: JSON.stringify({ update_id: 2, message: { text: "/start" } }),
   }), { ...bridgeEnv, QUEUE_ENCRYPTION_KEY: undefined });
   assert.equal(response.status, 503);
