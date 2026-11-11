@@ -39,7 +39,7 @@ Non-secret Worker variables:
 Worker secrets (never commit or paste into chat):
 - `TELEGRAM_BOT_TOKEN`: token from BotFather.
 - `TELEGRAM_WEBHOOK_SECRET`: Telegram webhook secret-token value.
-- `QUEUE_ENCRYPTION_KEY`: base64url-encoded 32 cryptographically random bytes, without padding.
+- `QUEUE_ENCRYPTION_KEY`: base64url-encoded 32 cryptographically random bytes, without padding. <configured in Cloudflare>
 - `BRIDGE_SHARED_SECRET`: at least 32 random characters, shared only between Worker and the local Bridge.
 
 Generate values locally with Python:
@@ -133,4 +133,4 @@ The helper checks the existing webhook and refuses to replace a different one un
 
 ## Current provisioning status
 
-The Worker subdomain, D1 database, binding, schema baseline, observability, and cleanup Cron were provisioned earlier. The Worker was refactored in this branch to the Local Bridge queue protocol. Telegram secrets, owner ID, Bridge secret, and webhook registration remain deployment gates. No live Telegram pairing or end-to-end round trip is claimed.
+The Worker subdomain, D1 database, binding, schema, observability, and cleanup Cron are provisioned. The latest Local Bridge Worker source is deployed. `QUEUE_ENCRYPTION_KEY` is configured in Cloudflare. `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BRIDGE_SHARED_SECRET`, the owner ID, and webhook registration remain deployment gates. No live Telegram pairing or end-to-end round trip is claimed.
