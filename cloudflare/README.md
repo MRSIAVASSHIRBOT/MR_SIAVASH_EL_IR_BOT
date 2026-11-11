@@ -51,6 +51,17 @@ py -c "import secrets; print(secrets.token_urlsafe(48))"
 
 The first command generates the queue encryption key; the second generates a bridge shared secret. Enter them directly into the Cloudflare Worker secret store. Do not put them in Git, Telegram, or this conversation.
 
+## Bootstrap the Telegram owner ID
+
+The Worker intentionally requires the owner ID before accepting webhook updates. If you do not know the numeric ID yet, obtain it before registering the webhook:
+
+1. Put the bot token in the ignored local .env file and leave ALLOWED_USER_IDS empty.
+2. Run python bot.py and send /id in a private chat with the bot.
+3. Stop the local polling process with Ctrl+C.
+4. Set the returned number as ALLOWED_TELEGRAM_USER_ID in the Worker configuration and as TELEGRAM_OWNER_ID in the local Bridge .env file.
+
+This is a one-time bootstrap step. Do not run bot.py while the webhook is active; it intentionally refuses to switch update modes or delete an existing webhook.
+
 ## Local Bridge configuration
 
 1. Start MR_SIAVASH_HUB_AI locally. Keep its API bound to `127.0.0.1:8000`.
