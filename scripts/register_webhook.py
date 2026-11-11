@@ -8,6 +8,23 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
+
+EXPECTED_WEBHOOK_HOST = "mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev"
+
+
+def validate_webhook_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == EXPECTED_WEBHOOK_HOST
+        and parsed.port in (None, 443)
+        and parsed.path == "/telegram/webhook"
+        and not parsed.username
+        and not parsed.password
+        and not parsed.query
+        and not parsed.fragment
+    )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from urllib.error import HTTPError, URLError
@@ -42,10 +59,10 @@ def main() -> int:
     if not token or token == "replace_with_your_token":
         print("TELEGRAM_BOT_TOKEN is missing from the local .env file.", file=sys.stderr)
         return 2
-    if not re.fullmatch(r"https://[^/]+/telegram/webhook", webhook_url):
+    if not validate_webhook_url(webhook_url):
         print("TELEGRAM_WEBHOOK_URL must be the exact HTTPS Worker URL ending in /telegram/webhook.", file=sys.stderr)
         return 2
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", secret):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", secret):
         print("TELEGRAM_WEBHOOK_SECRET must use 1-256 letters, digits, underscores, or hyphens.", file=sys.stderr)
         return 2
 
