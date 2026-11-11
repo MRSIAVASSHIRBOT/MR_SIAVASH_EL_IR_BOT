@@ -1,87 +1,77 @@
 # MR_SIAVASH_EL_IR_BOT
 
-ربات تلگرام مستقل با Python، دریافت پیام از طریق Long Polling و بدون وابستگی runtime خارجی.
+ربات تلگرام مستقل با لایهٔ Cloudflare Worker و اتصال امن به MR_SIAVASH_HUB_AI از طریق Local Bridge.
 
-## وضعیت نسخه
+## معماری پیشنهادی
 
-نسخهٔ فعلی، هستهٔ امن و پایهٔ ربات را فراهم می‌کند:
+- Telegram به Cloudflare Worker متصل می‌شود؛ Worker فقط لبهٔ عمومی دریافت پیام است.
+- Worker فرمان‌های مجاز را پس از رمزنگاری AES-256-GCM در D1 صف می‌کند.
+- Local Bridge از سیستم کاربر اتصال HTTPS خروجی به Worker برقرار می‌کند و فرمان‌ها را دریافت می‌کند.
+- Bridge فقط از طریق 127.0.0.1 به API محلی HUB متصل می‌شود.
+- احراز هویت Bridge با HMAC-SHA256، timestamp، nonce یک‌بارمصرف و جلوگیری از replay انجام می‌شود.
+- اعتبارنامه‌های جفت‌سازی HUB فقط در OS Keyring ذخیره می‌شوند؛ هیچ fallback به فایل متنی وجود ندارد.
 
-- فرمان‌های `/start`، `/help`، `/id` و `/status`
-- محدودسازی دسترسی با فهرست شناسه‌های عددی تلگرام
-- حالت راه‌اندازی اولیه تا پیش از تنظیم شناسهٔ مالک
-- پردازش پیام‌های خصوصی؛ پیام‌های گروهی نادیده گرفته می‌شوند
-- دریافت پیام با Long Polling و تلاش مجدد با تأخیر افزایشی
-- عدم حذف یا تغییر خودکار Webhook موجود
-- عدم نصب خودکار بسته‌ها و عدم ثبت توکن در لاگ‌ها
-- آزمون‌های واحد و GitHub Actions
+**هیچ پورت HUB عمومی نمی‌شود، Tunnel ایجاد نمی‌شود و HUB پشت Gateway عمومی MR_SIAVASH_AI قرار نمی‌گیرد.**
 
-اتصال به مدل هوش مصنوعی و MR_SIAVASH_HUB_AI هنوز پیاده‌سازی نشده است.
+## قابلیت‌های نسخهٔ امن
 
-## پیش‌نیازها
+- فرمان‌های /start، /help، /id و /pairinfo
+- جفت‌سازی یک‌بارمصرف با /pair CODE
+- بررسی وضعیت HUB با /status
+- مشاهدهٔ حداکثر ۱۰ کار اخیر با /tasks فقط در صورت اعطای صریح tasks:read
+- محدودسازی پیام‌ها به حساب مالک و چت خصوصی
+- صف رمزنگاری‌شده، idempotency، lease و محافظت در برابر replay
+- نگهداری امن اعتبارنامه‌ها با Python Keyring
+- CI برای آزمون‌های Python و Cloudflare Worker
 
-- Python 3.10 یا جدیدتر
-- توکن ربات از BotFather
-- دسترسی شبکه به `api.telegram.org`
+## راه‌اندازی Local Bridge
 
-## راه‌اندازی محلی در Windows PowerShell
-
-1. مخزن را دریافت و وارد پوشهٔ آن شوید.
-2. فایل نمونه را کپی کنید:
+پیش‌نیازها: Python 3.10+، اجرای محلی MR_SIAVASH_HUB_AI، و یک backend معتبر OS Keyring.
 
 ```powershell
 Copy-Item .env.example .env
+python -m pip install -r requirements.txt
 ```
 
-3. مقدار `TELEGRAM_BOT_TOKEN` را در فایل محلی `.env` قرار دهید. این فایل در Git نادیده گرفته می‌شود.
-4. اجرا:
+در فایل محلی .env مقدارهای TELEGRAM_OWNER_ID، BRIDGE_BASE_URL، HUB_API_BASE_URL و HUB_CLIENT_ID را تنظیم کن. آدرس HUB باید http://127.0.0.1:8000 باقی بماند.
+
+Secret مشترک Worker و Bridge را در Cloudflare تنظیم کن، سپس همان مقدار را در Keyring سیستم ذخیره کن:
 
 ```powershell
-python bot.py
+python bridge.py --init-secret
+python bridge.py
 ```
 
-در اجرای نخست، ربات در حالت onboarding است. در تلگرام به ربات پیام `/id` بدهید تا شناسهٔ عددی حساب خودتان را دریافت کنید. سپس آن شناسه را در `ALLOWED_USER_IDS` در فایل محلی `.env` وارد کنید و برنامه را دوباره اجرا کنید:
+ورودی Secret هنگام راه‌اندازی مخفی است. اگر OS Keyring در دسترس نباشد، Bridge متوقف می‌شود و هیچ اعتبارنامه‌ای را در فایل plaintext ذخیره نمی‌کند.
 
-```dotenv
-ALLOWED_USER_IDS=123456789
-```
+راهنمای کامل استقرار Worker، تنظیم D1، secretها، ثبت Webhook و جفت‌سازی در cloudflare/README.md قرار دارد.
 
-پس از آن فقط شناسه‌های ثبت‌شده اجازهٔ استفاده از فرمان‌ها و پاسخ‌های ربات را دارند. شناسهٔ نمونه را با شناسهٔ واقعی خود جایگزین کنید.
+## Long Polling محلی
 
-## اجرا در Linux
+فایل bot.py همچنان به‌عنوان حالت مستقل و محلی Long Polling حفظ شده است. برای یک توکن واحد، آن را هم‌زمان با Webhook فعال نکن؛ Telegram برای هر ربات یک روش دریافت update فعال دارد. پیش از تغییر روش، Webhook فعلی را بررسی کن.
 
-```bash
-cp .env.example .env
-# مقدارهای محلی .env را تنظیم کنید
-python3 bot.py
-```
+## فایل قدیمی
 
-برای اجرای دائمی، برنامه را در یک سرویس مدیریت‌شدهٔ سیستم اجرا کنید و متغیرهای محرمانه را از secret store همان محیط تزریق کنید.
-
-## Webhook و Long Polling
-
-این نسخه از Long Polling استفاده می‌کند. اگر برای همین توکن قبلاً Webhook تنظیم شده باشد، برنامه متوقف می‌شود و آن را خودکار حذف نمی‌کند؛ این کار برای جلوگیری از مختل‌کردن سرویس قبلی عمدی است. پیش از مهاجرت، وضعیت Webhook را بررسی و دربارهٔ تغییر روش دریافت پیام تصمیم بگیرید.
+bot_server.py از نسخهٔ قدیمی مخزن است و این نسخهٔ امن آن را اجرا یا import نمی‌کند. برای حفظ تاریخچه حذف نشده و قابلیت‌های پرخطر آن توسعه داده نمی‌شود.
 
 ## آزمون‌ها
 
-```bash
-python -m compileall -q bot.py tests
+```powershell
+python -m pip install -r requirements.txt
+python -m compileall -q bot.py bridge.py scripts tests
 python -m unittest discover -s tests -v
+npm run test:worker
 ```
 
-## مرز امنیتی و فایل قدیمی
+## اسرار و امنیت
 
-فایل `bot_server.py` از نسخهٔ قبلی مخزن است و در این نسخه اجرا یا import نمی‌شود. به دلیل وجود قابلیت‌های حساس و پرخطر در آن، این راه‌اندازی جدید از آن استفاده نمی‌کند و قابلیت‌های جمع‌آوری اطلاعات خصوصی، فیشینگ، تولید payload و اجرای عملیات تهاجمی را فعال یا توسعه نمی‌دهد. فایل قدیمی برای حفظ تاریخچه و کار قبلی حذف نشده است.
+- توکن Telegram، Webhook secret، Queue encryption key و Bridge shared secret را در Git، Issue یا گفتگو قرار نده.
+- Hub access/refresh tokens در OS Keyring ذخیره می‌شوند.
+- Pairing code در D1 به‌صورت رمزنگاری‌شده ذخیره می‌شود.
+- Bridge فقط APIهای اختصاصی Telegram HUB را فراخوانی می‌کند.
+- اجرای shell، اجرای Agent، تصمیم تأیید، ایجاد Task، انتشار محتوا و ابزارهای دلخواه در این نسخه در دسترس نیست.
+- مجوز پیش‌فرض status:read است؛ tasks:read فقط با رضایت صریح مالک فعال می‌شود.
 
-## نگهداری اسرار
+## وضعیت
 
-- توکن واقعی را در گفتگو، commit، issue یا log قرار ندهید.
-- فقط از `.env` محلی یا Secretهای محیط اجرا استفاده کنید.
-- اگر توکن افشا شد، آن را از طریق BotFather باطل و جایگزین کنید.
-
-## Cloudflare Free Hosting and MR_SIAVASH_HUB_AI
-
-A Cloudflare Workers webhook deployment is available in [cloudflare/README.md](cloudflare/README.md). It uses a separate Worker and D1 database, validates Telegram's webhook secret-token header, restricts messages to the configured owner ID, encrypts paired Hub credentials before storage, and calls only the Hub's dedicated scoped Telegram integration endpoints.
-
-The Hub already implements one-time pairing, short-lived access tokens, refresh tokens, client revocation, audit events, and explicit scopes. The Worker does not expose the local Hub directly; it expects a controlled HTTPS tunnel to the Hub API. Keep the Hub bound to loopback and do not expose port 8000 directly.
-
-The Cloudflare Worker source is committed but is not yet deployed or connected to a live Telegram webhook. Remaining deployment gates: Telegram secrets and owner ID, a protected HTTPS Hub tunnel, Cloudflare Access service-token credentials, and a verified Telegram webhook registration. Use the local helper `python scripts/register_webhook.py` after configuring the ignored `.env` file.
+کد Local Bridge و صف رمزنگاری‌شده در شاخهٔ توسعه پیاده‌سازی شده‌اند؛ تا زمان اجرای CI، تنظیم secretها، ثبت webhook، جفت‌سازی واقعی و آزمون رفت‌وبرگشت تلگرام، سرویس عملیاتی و زنده محسوب نمی‌شود.
