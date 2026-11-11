@@ -152,6 +152,7 @@ function validateEnvironment(env) {
   if (!/^\\d{1,20}$/.test(String(env.ALLOWED_TELEGRAM_USER_ID || ""))) return "Owner Telegram ID is invalid";
   if (!CLIENT_ID_PATTERN.test(String(env.HUB_CLIENT_ID || ""))) return "Hub client ID is invalid";
   if (!safeHubBaseUrl(env.HUB_API_BASE_URL)) return "Hub API base URL must be an HTTPS origin";
+  if (Boolean(env.CF_ACCESS_CLIENT_ID) !== Boolean(env.CF_ACCESS_CLIENT_SECRET)) return "Both Cloudflare Access service-token values must be configured together";
   return null;
 }
 
@@ -162,6 +163,7 @@ async function hubRequest(env, path, init = {}) {
     ...init,
     headers: {
       "content-type": "application/json",
+      ...(env.CF_ACCESS_CLIENT_ID ? { "CF-Access-Client-Id": env.CF_ACCESS_CLIENT_ID, "CF-Access-Client-Secret": env.CF_ACCESS_CLIENT_SECRET } : {}),
       ...(init.headers || {}),
     },
     signal: AbortSignal.timeout(HUB_TIMEOUT_MS),
