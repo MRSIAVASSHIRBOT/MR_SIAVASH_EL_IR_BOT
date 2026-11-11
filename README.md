@@ -77,3 +77,11 @@ python -m unittest discover -s tests -v
 - توکن واقعی را در گفتگو، commit، issue یا log قرار ندهید.
 - فقط از `.env` محلی یا Secretهای محیط اجرا استفاده کنید.
 - اگر توکن افشا شد، آن را از طریق BotFather باطل و جایگزین کنید.
+
+## Cloudflare Free Hosting and MR_SIAVASH_HUB_AI
+
+A Cloudflare Workers webhook deployment is available in [cloudflare/README.md](cloudflare/README.md). It uses a separate Worker and D1 database, validates Telegram's webhook secret-token header, restricts messages to the configured owner ID, encrypts paired Hub credentials before storage, and calls only the Hub's dedicated scoped Telegram integration endpoints.
+
+The Hub already implements one-time pairing, short-lived access tokens, refresh tokens, client revocation, audit events, and explicit scopes. The Worker does not expose the local Hub directly; it expects a controlled HTTPS tunnel to the Hub API. Keep the Hub bound to loopback and do not expose port 8000 directly.
+
+The Cloudflare Worker source is committed but is not yet deployed or connected to a live Telegram webhook. Deployment requires the user's Cloudflare secret configuration, a reachable protected Hub tunnel, a D1 binding, and a verified webhook registration. Use the local helper `python scripts/register_webhook.py` after configuring the ignored `.env` file.
