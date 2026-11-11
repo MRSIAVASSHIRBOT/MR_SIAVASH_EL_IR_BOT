@@ -40,7 +40,7 @@ export function constantTimeEqual(left, right) {
 
 export function parseTelegramCommand(text) {
   if (typeof text !== "string") return { command: "", args: [] };
-  const parts = text.trim().split(/\\s+/);
+  const parts = text.trim().split(/\s+/);
   const first = parts.shift() || "";
   if (!first.startsWith("/")) return { command: "", args: [] };
   return {
@@ -149,7 +149,7 @@ function validateEnvironment(env) {
     return "Telegram or session secrets are missing";
   }
   if (!env.DB || typeof env.DB.prepare !== "function") return "D1 database binding is missing";
-  if (!/^\\d{1,20}$/.test(String(env.ALLOWED_TELEGRAM_USER_ID || ""))) return "Owner Telegram ID is invalid";
+  if (!/^\d{1,20}$/.test(String(env.ALLOWED_TELEGRAM_USER_ID || ""))) return "Owner Telegram ID is invalid";
   if (!CLIENT_ID_PATTERN.test(String(env.HUB_CLIENT_ID || ""))) return "Hub client ID is invalid";
   if (!safeHubBaseUrl(env.HUB_API_BASE_URL)) return "Hub API base URL must be an HTTPS origin";
   if (Boolean(env.CF_ACCESS_CLIENT_ID) !== Boolean(env.CF_ACCESS_CLIENT_SECRET)) return "Both Cloudflare Access service-token values must be configured together";
