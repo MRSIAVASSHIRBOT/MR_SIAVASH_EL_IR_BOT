@@ -1,6 +1,7 @@
 const MAX_BODY_BYTES = 64 * 1024;
 const TELEGRAM_TIMEOUT_MS = 8000;
 const HUB_CLIENT_ID_DEFAULT = "3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52";
+const TELEGRAM_WEBHOOK_URL = "https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev/telegram/webhook";
 const CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function json(data, status = 200) {
@@ -128,6 +129,19 @@ async function sendMessage(env, chatId, text) {
     text: String(text).slice(0, 4000),
     disable_web_page_preview: true,
   });
+}
+
+async function registerWebhook(env) {
+  const registered = await telegramCall(env, "setWebhook", {
+    url: TELEGRAM_WEBHOOK_URL,
+    secret_token: env.TELEGRAM_WEBHOOK_SECRET,
+    allowed_updates: ["message"],
+    drop_pending_updates: false,
+  });
+  if (registered !== true) throw new Error("Telegram did not confirm webhook registration");
+  const info = await telegramCall(env, "getWebhookInfo", {});
+  if (info?.url !== TELEGRAM_WEBHOOK_URL) throw new Error("Telegram webhook read-back did not match");
+  return info;
 }
 
 function validateTelegramEnvironment(env) {
@@ -337,6 +351,29 @@ export default {
         { status: ready ? "ready" : "not_ready", service: "mr-siavash-el-ir-bot-edge" },
         ready ? 200 : 503,
       );
+    }
+
+    if (url.pathname === "/admin/register-webhook") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      if (!env.WEBHOOK_SETUP_SECRET || String(env.WEBHOOK_SETUP_SECRET).length < 32) {
+        return json({ error: "setup_not_configured" }, 503);
+      }
+      const authorization = request.headers.get("Authorization") || "";
+      if (!constantTimeEqual(authorization, `Bearer ${env.WEBHOOK_SETUP_SECRET}`)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      if (validateTelegramEnvironment(env)) return json({ error: "service_not_configured" }, 503);
+      try {
+        const info = await registerWebhook(env);
+        return json({
+          ok: true,
+          webhook_registered: true,
+          webhook_url: TELEGRAM_WEBHOOK_URL,
+          pending_update_count: Number(info.pending_update_count || 0),
+        });
+      } catch {
+        return json({ error: "webhook_registration_failed" }, 502);
+      }
     }
 
     if (url.pathname === "/telegram/webhook") {
