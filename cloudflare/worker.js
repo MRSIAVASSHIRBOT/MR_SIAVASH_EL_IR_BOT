@@ -190,7 +190,7 @@ async function handleTelegramMessage(env, update) {
     return;
   }
   if (command === "/help") {
-    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)");
+    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pairinfo — اطلاعات جفت‌سازی\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)");
     return;
   }
   if (command === "/id") {
