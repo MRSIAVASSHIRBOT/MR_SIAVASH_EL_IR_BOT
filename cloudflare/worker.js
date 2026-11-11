@@ -203,7 +203,7 @@ async function handleTelegramMessage(env, update) {
       await sendMessage(env, chatId, "شناسهٔ کلاینت در Worker معتبر نیست؛ تنظیمات سرویس را بررسی کن.");
       return;
     }
-    await sendMessage(env, chatId, `شناسه تلگرام: ${userId}\\nشناسه کلاینت HUB: ${clientId}\\nسطح دسترسی پیشنهادی: status:read`);
+    await sendMessage(env, chatId, `شناسه تلگرام: ${userId}\nشناسه کلاینت HUB: ${clientId}\nسطح دسترسی پیشنهادی: status:read`);
     return;
   }
   if (command === "/pair") {
