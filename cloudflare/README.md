@@ -87,3 +87,13 @@ If replacing a different webhook is intended, inspect it first, then set CONFIRM
 ## Operational limits
 
 Cloudflare Workers Free has usage limits; check current quota before relying on high-volume traffic. Hub commands are unavailable while the local machine, Hub API, or tunnel is offline. The webhook can remain online during a Hub outage, but it must report the outage rather than bypass Hub policy. A successful Worker deployment is not a verified Telegram webhook; test a real private-chat round trip before calling it live.
+## Provisioned Cloudflare resources (2026-11-11)
+
+- Worker: mr-siavash-el-ir-bot
+- Worker URL: https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev
+- D1 database: mr-siavash-el-ir-bot-state
+- D1 database ID: 2caf5405-9da6-48c0-b92f-d79ed40f2915
+- Cron cleanup schedule: 17 3 * * * (daily, UTC)
+- Worker module, D1 binding, observability settings, and D1 schema have been deployed/verified through the Cloudflare API.
+
+The Worker is provisioned but NOT operational yet: Telegram secrets, owner ID, Hub HTTPS origin, Access service-token credentials, and Telegram webhook registration are still pending. The /health endpoint was not independently verified over the public network in this session.
