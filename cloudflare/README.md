@@ -133,8 +133,8 @@ The helper checks the existing webhook and refuses to replace a different one un
 
 ## Health and readiness probes
 
-- `GET /health` is a liveness probe only. It confirms that the Worker can answer requests; it does not prove that Telegram or the Bridge is configured.
-- `GET /ready` is a readiness probe. It returns HTTP 200 only when the required Worker secrets, owner ID, D1 binding, and 32-byte base64url queue-encryption key have valid configuration. Otherwise it returns HTTP 503 with a minimal `not_ready` status.
+- `GET /health` is a liveness probe only. It confirms that the currently deployed Worker can answer requests; it does not prove that Telegram or the Bridge is configured.
+- This PR adds `GET /ready` as a readiness probe. After this Worker revision is deployed, it will return HTTP 200 only when the required Worker secrets, owner ID, D1 binding, and 32-byte base64url queue-encryption key have valid configuration. Otherwise it returns HTTP 503 with a minimal `not_ready` status.
 - Neither endpoint verifies Telegram webhook registration, the local Bridge process, OS Keyring availability, Hub pairing, or a complete Telegram-to-Hub round trip. Those remain separate acceptance checks.
 
 ## Current provisioning status
