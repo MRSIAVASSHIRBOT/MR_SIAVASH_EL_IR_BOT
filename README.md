@@ -84,4 +84,4 @@ A Cloudflare Workers webhook deployment is available in [cloudflare/README.md](c
 
 The Hub already implements one-time pairing, short-lived access tokens, refresh tokens, client revocation, audit events, and explicit scopes. The Worker does not expose the local Hub directly; it expects a controlled HTTPS tunnel to the Hub API. Keep the Hub bound to loopback and do not expose port 8000 directly.
 
-The Cloudflare Worker source is committed but is not yet deployed or connected to a live Telegram webhook. Deployment requires the user's Cloudflare secret configuration, a reachable protected Hub tunnel, a D1 binding, and a verified webhook registration. Use the local helper `python scripts/register_webhook.py` after configuring the ignored `.env` file.
+The Cloudflare Worker source is committed but is not yet deployed or connected to a live Telegram webhook. Remaining deployment gates: Telegram secrets and owner ID, a protected HTTPS Hub tunnel, Cloudflare Access service-token credentials, and a verified Telegram webhook registration. Use the local helper `python scripts/register_webhook.py` after configuring the ignored `.env` file.
