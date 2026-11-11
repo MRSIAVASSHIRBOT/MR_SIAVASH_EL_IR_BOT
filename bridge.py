@@ -300,6 +300,11 @@ class LocalBridge:
         return job if isinstance(job, dict) else None
 
     def process_job(self, job: dict[str, Any]) -> str:
+        if (
+            int(job.get("telegram_user_id", 0)) != self.config.telegram_owner_id
+            or int(job.get("chat_id", 0)) != self.config.telegram_owner_id
+        ):
+            return "درخواست به دلیل عدم تطابق شناسه مالک رد شد."
         payload = job.get("payload")
         if not isinstance(payload, dict):
             return "درخواست دریافتی معتبر نبود."
