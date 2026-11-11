@@ -72,6 +72,18 @@ class RequestSigningTests(unittest.TestCase):
         self.assertNotEqual(first, changed_body)
 
 
+class OwnerBoundaryTests(unittest.TestCase):
+    def test_bridge_rejects_job_for_another_telegram_identity(self):
+        bridge = LocalBridge.__new__(LocalBridge)
+        bridge.config = type("Config", (), {"telegram_owner_id": 123456789})()
+        reply = bridge.process_job({
+            "telegram_user_id": 999999999,
+            "chat_id": 999999999,
+            "payload": {"command": "status"},
+        })
+        self.assertIn("عدم تطابق", reply)
+
+
 class CredentialStoreTests(unittest.TestCase):
     def test_hub_credentials_are_written_to_keyring_and_read_back(self):
         keyring = FakeKeyring()
