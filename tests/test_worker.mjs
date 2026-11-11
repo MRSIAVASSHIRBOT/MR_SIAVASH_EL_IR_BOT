@@ -67,3 +67,54 @@ test("webhook fails closed while required secrets are missing", async () => {
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "service_not_configured" });
 });
+
+
+test("/pairinfo formats the Telegram identity details as separate lines", async () => {
+  const previousFetch = globalThis.fetch;
+  let sentMessage = null;
+  globalThis.fetch = async (_url, options) => {
+    sentMessage = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true, result: {} }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const env = {
+    ...bridgeEnv,
+    DB: {
+      prepare() {
+        return {
+          bind(...values) {
+            return {
+              first: async () => ({ update_id: values[0] }),
+              run: async () => ({ success: true }),
+            };
+          },
+        };
+      },
+    },
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        update_id: 99,
+        message: {
+          from: { id: 123456789 },
+          chat: { id: 123456789, type: "private" },
+          text: "/pairinfo",
+        },
+      }),
+    }), env);
+    assert.equal(response.status, 200);
+    assert.ok(sentMessage);
+    assert.match(sentMessage.text, /\n/);
+    assert.equal(sentMessage.text.includes("\\n"), false);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
