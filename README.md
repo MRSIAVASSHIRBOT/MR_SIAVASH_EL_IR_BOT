@@ -46,6 +46,18 @@ python bridge.py
 
 راهنمای کامل استقرار Worker، تنظیم D1، secretها، ثبت Webhook و جفت‌سازی در cloudflare/README.md قرار دارد.
 
+## دریافت شناسه مالک پیش از راه‌اندازی Webhook
+
+اگر شناسه عددی تلگرام را نمی‌دانی، پیش از ثبت Webhook می‌توانی موقتاً از حالت Long Polling استفاده کنی:
+
+1. در فایل محلی .env توکن ربات را در TELEGRAM_BOT_TOKEN قرار بده و ALLOWED_USER_IDS را خالی بگذار.
+2. اجرا کن: python bot.py
+3. در گفت‌وگوی خصوصی ربات، فرمان /id را بفرست و شناسه را یادداشت کن.
+4. برنامه را با Ctrl+C متوقف کن.
+5. شناسه را در TELEGRAM_OWNER_ID قرار بده و سپس برای راه‌اندازی Worker و ثبت Webhook اقدام کن.
+
+این حالت فقط برای bootstrap است. اگر برای ربات Webhook فعالی وجود داشته باشد، bot.py عمداً Long Polling را شروع نمی‌کند و Webhook را حذف نمی‌کند. پس از ثبت Webhook، bot.py و Local Bridge را با هم جایگزین روش دریافت update نکن؛ برای اتصال HUB فقط bridge.py را اجرا کن.
+
 ## Long Polling محلی
 
 فایل bot.py همچنان به‌عنوان حالت مستقل و محلی Long Polling حفظ شده است. برای یک توکن واحد، آن را هم‌زمان با Webhook فعال نکن؛ Telegram برای هر ربات یک روش دریافت update فعال دارد. پیش از تغییر روش، Webhook فعلی را بررسی کن.
