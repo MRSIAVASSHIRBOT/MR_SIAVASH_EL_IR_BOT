@@ -94,6 +94,67 @@ test("webhook fails closed when Telegram credentials are missing", async () => {
   assert.deepEqual(await response.json(), { error: "service_not_configured" });
 });
 
+test("cloud webhook registration is owner-secret protected and pins the approved URL", async () => {
+  const previousFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, payload: JSON.parse(options.body) });
+    const result = url.endsWith("/setWebhook")
+      ? true
+      : { url: "https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev/telegram/webhook", pending_update_count: 0 };
+    return new Response(JSON.stringify({ ok: true, result }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/admin/register-webhook", {
+      method: "POST",
+      headers: { Authorization: "Bearer one-time-setup-secret-that-is-at-least-32-chars" },
+    }), {
+      ...bridgeEnv,
+      WEBHOOK_SETUP_SECRET: "one-time-setup-secret-that-is-at-least-32-chars",
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      webhook_registered: true,
+      webhook_url: "https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev/telegram/webhook",
+      pending_update_count: 0,
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url.endsWith("/setWebhook"), true);
+    assert.equal(calls[0].payload.secret_token, bridgeEnv.TELEGRAM_WEBHOOK_SECRET);
+    assert.equal(calls[0].payload.drop_pending_updates, false);
+    assert.equal(calls[1].url.endsWith("/getWebhookInfo"), true);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("cloud webhook registration rejects invalid setup credentials without contacting Telegram", async () => {
+  const previousFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    throw new Error("Telegram must not be contacted");
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/admin/register-webhook", {
+      method: "POST",
+      headers: { Authorization: "Bearer wrong-setup-secret" },
+    }), {
+      ...bridgeEnv,
+      WEBHOOK_SETUP_SECRET: "one-time-setup-secret-that-is-at-least-32-chars",
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "unauthorized" });
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("cloud Telegram commands work without any local Bridge secrets", async () => {
   const previousFetch = globalThis.fetch;
   let sentMessage = null;
