@@ -1,1 +1,2 @@
-# Runtime uses only the Python standard library.
+# Required for secure OS credential storage (Windows Credential Manager, macOS Keychain, Linux Secret Service).
+keyring>=25,<27
