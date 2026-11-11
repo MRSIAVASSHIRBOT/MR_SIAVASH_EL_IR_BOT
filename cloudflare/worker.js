@@ -137,6 +137,7 @@ function validateEnvironment(env) {
   if (!env.DB || typeof env.DB.prepare !== "function") return "D1 database binding is missing";
   if (!/^\d{1,20}$/.test(String(env.ALLOWED_TELEGRAM_USER_ID || ""))) return "Owner Telegram ID is invalid";
   if (String(env.BRIDGE_SHARED_SECRET).length < 32) return "Bridge shared secret is too short";
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(String(env.TELEGRAM_WEBHOOK_SECRET))) return "Telegram webhook secret format is invalid";
   return null;
 }
 
@@ -166,9 +167,12 @@ async function releaseUpdate(env, updateId) {
 async function enqueueJob(env, updateId, chatId, userId, payload) {
   const encrypted = await encryptPayload(payload, env);
   const jobId = crypto.randomUUID();
-  await env.DB.prepare(
-    "INSERT INTO telegram_jobs (job_id, update_id, chat_id, telegram_user_id, payload_ciphertext, state, lease_until, lease_token_hash, attempts, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'pending', 0, NULL, 0, unixepoch(), unixepoch())",
+  const inserted = await env.DB.prepare(
+    "INSERT OR IGNORE INTO telegram_jobs (job_id, update_id, chat_id, telegram_user_id, payload_ciphertext, state, lease_until, lease_token_hash, attempts, created_at, updated_at) SELECT ?, ?, ?, ?, ?, 'pending', 0, NULL, 0, unixepoch(), unixepoch() WHERE (SELECT COUNT(*) FROM telegram_jobs WHERE state IN ('pending','leased','sending')) < 1000",
   ).bind(jobId, updateId, chatId, userId, encrypted).run();
+  if (Number(inserted.meta?.changes || 0) > 0) return true;
+  const existing = await env.DB.prepare("SELECT job_id FROM telegram_jobs WHERE update_id = ?").bind(updateId).first();
+  return Boolean(existing);
 }
 
 async function handleTelegramMessage(env, update) {
@@ -207,11 +211,13 @@ async function handleTelegramMessage(env, update) {
       await sendMessage(env, chatId, "فرمت صحیح: /pair کد_یک‌بارمصرف");
       return;
     }
-    await enqueueJob(env, update.update_id, chatId, userId, { command: "pair", pairing_code: args[0] });
+    const queued = await enqueueJob(env, update.update_id, chatId, userId, { command: "pair", pairing_code: args[0] });
+    if (!queued) await sendMessage(env, chatId, "صف درخواست‌ها موقتاً پر است؛ کمی بعد دوباره تلاش کن.");
     return;
   }
   if (command === "/status" || command === "/tasks") {
-    await enqueueJob(env, update.update_id, chatId, userId, { command: command.slice(1) });
+    const queued = await enqueueJob(env, update.update_id, chatId, userId, { command: command.slice(1) });
+    if (!queued) await sendMessage(env, chatId, "صف درخواست‌ها موقتاً پر است؛ کمی بعد دوباره تلاش کن.");
     return;
   }
   await sendMessage(env, chatId, "این فرمان در نسخه فعلی پشتیبانی نمی‌شود. برای راهنما /help را بفرست.");
