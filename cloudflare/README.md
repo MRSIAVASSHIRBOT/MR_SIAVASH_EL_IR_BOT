@@ -123,6 +123,31 @@ python scripts/register_webhook.py
 
 The helper checks the existing webhook and refuses to replace a different one unless `CONFIRM_REPLACE_WEBHOOK=true` is explicitly set for that registration run.
 
+## Preferred one-time cloud registration (no local bot token)
+
+The bot token does not need to be copied into the local `.env` file. Store it once as a Cloudflare Worker secret, together with `TELEGRAM_WEBHOOK_SECRET`. Set `ALLOWED_TELEGRAM_USER_ID` as a Worker variable. For the one-time registration operation, also create a temporary `WEBHOOK_SETUP_SECRET` Worker secret (at least 32 random characters).
+
+Generate the temporary setup secret locally:
+
+```powershell
+py -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+After adding it as `WEBHOOK_SETUP_SECRET` in Cloudflare, run this PowerShell command. It prompts for the setup secret without echoing it and does not ask for the bot token:
+
+```powershell
+$secure = Read-Host "Temporary webhook setup secret" -AsSecureString
+$setupSecret = [System.Net.NetworkCredential]::new("", $secure).Password
+try {
+  Invoke-RestMethod -Method Post -Uri "https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev/admin/register-webhook" -Headers @{ Authorization = "Bearer $setupSecret" }
+} finally {
+  $setupSecret = $null
+  $secure.Dispose()
+}
+```
+
+The Worker registers only its own pinned HTTPS webhook URL, keeps pending Telegram updates, and verifies the result with `getWebhookInfo`. The endpoint cannot set an arbitrary URL or call arbitrary Telegram methods. After a successful response, remove `WEBHOOK_SETUP_SECRET` from Worker secrets; it is no longer needed. Keep `TELEGRAM_WEBHOOK_SECRET` in Cloudflare because Telegram must send it with every webhook update.
+
 ## Operational behavior and verification
 
 - If the local machine or Hub is offline, queued Hub commands wait in D1 until the Bridge reconnects.
@@ -137,6 +162,7 @@ The helper checks the existing webhook and refuses to replace a different one un
 
 - `GET /health` is a liveness probe only. It confirms that the currently deployed Worker can answer requests; it does not prove that Telegram or the Bridge is configured.
 - `GET /ready` reports readiness of the Telegram cloud edge. It requires the Telegram bot token, webhook secret, owner ID, and D1 binding; it does not require the optional Bridge secrets.
+- `POST /admin/register-webhook` is a one-time setup endpoint protected by the temporary `WEBHOOK_SETUP_SECRET`. It registers only the pinned Worker URL and verifies the result. Remove the temporary secret after successful registration.
 - Readiness does not verify Telegram webhook registration, the optional local Bridge process, OS Keyring availability, Hub pairing, or a complete Telegram-to-Hub round trip. Those remain separate acceptance checks.
 
 ## Current provisioning status
