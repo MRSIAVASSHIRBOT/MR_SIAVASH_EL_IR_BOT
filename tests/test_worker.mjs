@@ -15,6 +15,32 @@ const bridgeEnv = {
   DB: { prepare() { throw new Error("DB must not be accessed before bridge authentication"); } },
 };
 
+function updateOnlyDb() {
+  return {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            first: async () => sql.includes("INSERT INTO telegram_processed_updates")
+              ? { update_id: values[0] }
+              : null,
+            run: async () => ({ success: true }),
+          };
+        },
+      };
+    },
+  };
+}
+
+function telegramOnlyEnv() {
+  return {
+    TELEGRAM_BOT_TOKEN: "test-token",
+    TELEGRAM_WEBHOOK_SECRET: bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+    ALLOWED_TELEGRAM_USER_ID: "123456789",
+    DB: updateOnlyDb(),
+  };
+}
+
 test("compares webhook secrets without ordinary string equality", () => {
   assert.equal(constantTimeEqual("secret-value", "secret-value"), true);
   assert.equal(constantTimeEqual("secret-value", "secret-valuf"), false);
@@ -58,14 +84,74 @@ test("bridge endpoints reject unsigned requests before touching D1", async () =>
   assert.deepEqual(await response.json(), { error: "unauthorized" });
 });
 
-test("webhook fails closed while required secrets are missing", async () => {
+test("webhook fails closed when Telegram credentials are missing", async () => {
   const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
     method: "POST",
     headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "expected-secret-value-with-at-least-32-chars" },
     body: JSON.stringify({ update_id: 2, message: { text: "/start" } }),
-  }), { ...bridgeEnv, QUEUE_ENCRYPTION_KEY: undefined });
+  }), { ...bridgeEnv, TELEGRAM_BOT_TOKEN: undefined });
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "service_not_configured" });
+});
+
+test("cloud Telegram commands work without any local Bridge secrets", async () => {
+  const previousFetch = globalThis.fetch;
+  let sentMessage = null;
+  globalThis.fetch = async (_url, options) => {
+    sentMessage = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        update_id: 3,
+        message: {
+          from: { id: 123456789 },
+          chat: { id: 123456789, type: "private" },
+          text: "/start",
+        },
+      }),
+    }), telegramOnlyEnv());
+    assert.equal(response.status, 200);
+    assert.match(sentMessage.text, /ربات MR_SIAVASH_EL_IR_BOT آماده است/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("Hub commands fail gracefully when the optional Bridge is offline or unconfigured", async () => {
+  const previousFetch = globalThis.fetch;
+  let sentMessage = null;
+  globalThis.fetch = async (_url, options) => {
+    sentMessage = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        update_id: 4,
+        message: {
+          from: { id: 123456789 },
+          chat: { id: 123456789, type: "private" },
+          text: "/status",
+        },
+      }),
+    }), telegramOnlyEnv());
+    assert.equal(response.status, 200);
+    assert.match(sentMessage.text, /اتصال HUB هنوز پیکربندی نشده است/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 
@@ -120,7 +206,7 @@ test("/pairinfo formats the Telegram identity details as separate lines", async 
 });
 
 
-test("/ready reports liveness separately from configured service readiness", async () => {
+test("/ready checks Telegram edge readiness without requiring the optional Bridge", async () => {
   const live = await worker.fetch(new Request("https://worker.example/health"), {});
   assert.equal(live.status, 200);
   const unconfigured = await worker.fetch(new Request("https://worker.example/ready"), {});
@@ -129,7 +215,7 @@ test("/ready reports liveness separately from configured service readiness", asy
     status: "not_ready",
     service: "mr-siavash-el-ir-bot-edge",
   });
-  const ready = await worker.fetch(new Request("https://worker.example/ready"), bridgeEnv);
+  const ready = await worker.fetch(new Request("https://worker.example/ready"), telegramOnlyEnv());
   assert.equal(ready.status, 200);
   assert.deepEqual(await ready.json(), {
     status: "ready",
@@ -137,14 +223,14 @@ test("/ready reports liveness separately from configured service readiness", asy
   });
 });
 
-test("readiness rejects malformed queue encryption keys before accepting traffic", async () => {
+test("Telegram edge readiness is unaffected by malformed optional Bridge configuration", async () => {
   const response = await worker.fetch(new Request("https://worker.example/ready"), {
-    ...bridgeEnv,
+    ...telegramOnlyEnv(),
     QUEUE_ENCRYPTION_KEY: "not-a-valid-32-byte-base64url-key",
   });
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    status: "not_ready",
+    status: "ready",
     service: "mr-siavash-el-ir-bot-edge",
   });
 });
