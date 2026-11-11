@@ -131,6 +131,12 @@ The helper checks the existing webhook and refuses to replace a different one un
 - Delivery is at-least-once across network failure windows; an ambiguous Telegram timeout can cause a repeated reply. Update IDs and job leases prevent ordinary duplicate processing.
 - A deployed Worker is not the same as a configured bot. Verify webhook registration, local Keyring availability, owner pairing, and a real private-chat round trip before calling the service live.
 
+## Health and readiness probes
+
+- `GET /health` is a liveness probe only. It confirms that the Worker can answer requests; it does not prove that Telegram or the Bridge is configured.
+- `GET /ready` is a readiness probe. It returns HTTP 200 only when the required Worker secrets, owner ID, D1 binding, and 32-byte base64url queue-encryption key have valid configuration. Otherwise it returns HTTP 503 with a minimal `not_ready` status.
+- Neither endpoint verifies Telegram webhook registration, the local Bridge process, OS Keyring availability, Hub pairing, or a complete Telegram-to-Hub round trip. Those remain separate acceptance checks.
+
 ## Current provisioning status
 
 The Worker subdomain, D1 database, binding, schema, observability, and cleanup Cron are provisioned. The latest Local Bridge Worker source is deployed. `QUEUE_ENCRYPTION_KEY` is configured in Cloudflare. `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BRIDGE_SHARED_SECRET`, the owner ID, and webhook registration remain deployment gates. No live Telegram pairing or end-to-end round trip is claimed.
