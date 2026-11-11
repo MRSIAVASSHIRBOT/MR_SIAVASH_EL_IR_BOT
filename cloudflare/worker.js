@@ -1,5 +1,6 @@
 const MAX_BODY_BYTES = 64 * 1024;
 const TELEGRAM_TIMEOUT_MS = 8000;
+const HUB_CLIENT_ID_DEFAULT = "3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52";
 const CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function json(data, status = 200) {
@@ -181,7 +182,7 @@ async function handleTelegramMessage(env, update) {
   const text = typeof message.text === "string" ? message.text.trim() : "";
   const { command, args } = parseTelegramCommand(text);
   if (command === "/start") {
-    await sendMessage(env, chatId, "سلام ✨ ربات MR_SIAVASH_EL_IR_BOT آماده است. برای اتصال امن به HUB ابتدا /pairinfo را از کلاینت محلی دریافت و سپس /pair CODE را ارسال کن.");
+    await sendMessage(env, chatId, "سلام ✨ ربات MR_SIAVASH_EL_IR_BOT آماده است. برای اطلاعات جفت‌سازی /pairinfo و برای اتصال /pair CODE را بفرست.");
     return;
   }
   if (command === "/help") {
@@ -190,6 +191,15 @@ async function handleTelegramMessage(env, update) {
   }
   if (command === "/id") {
     await sendMessage(env, chatId, `شناسهٔ عددی تلگرام شما: ${userId}`);
+    return;
+  }
+  if (command === "/pairinfo") {
+    const clientId = String(env.HUB_CLIENT_ID || HUB_CLIENT_ID_DEFAULT);
+    if (!CLIENT_ID_PATTERN.test(clientId)) {
+      await sendMessage(env, chatId, "شناسهٔ کلاینت در Worker معتبر نیست؛ تنظیمات سرویس را بررسی کن.");
+      return;
+    }
+    await sendMessage(env, chatId, `شناسه تلگرام: ${userId}\\nشناسه کلاینت HUB: ${clientId}\\nسطح دسترسی پیشنهادی: status:read`);
     return;
   }
   if (command === "/pair") {
