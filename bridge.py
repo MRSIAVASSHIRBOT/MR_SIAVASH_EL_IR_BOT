@@ -25,6 +25,7 @@ SERVICE_NAME = "MR_SIAVASH_EL_IR_BOT"
 BRIDGE_SECRET_ACCOUNT = "bridge-shared-secret"
 HUB_CLIENT_ID_DEFAULT = "3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52"
 DEFAULT_WORKER_URL = "https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev"
+EXPECTED_WORKER_HOST = "mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev"
 MAX_RESPONSE_BYTES = 64 * 1024
 
 
@@ -56,30 +57,32 @@ def validate_worker_url(value: str) -> str:
     parsed = urlsplit(value)
     if (
         parsed.scheme != "https"
-        or not parsed.hostname
+        or parsed.hostname != EXPECTED_WORKER_HOST
+        or parsed.port not in (None, 443)
         or parsed.username
         or parsed.password
         or parsed.path not in ("", "/")
         or parsed.query
         or parsed.fragment
     ):
-        raise BridgeError("BRIDGE_BASE_URL must be an HTTPS origin without credentials or a path.")
-    return f"https://{parsed.netloc}"
+        raise BridgeError("BRIDGE_BASE_URL must be the approved Cloudflare Worker HTTPS origin.")
+    return f"https://{EXPECTED_WORKER_HOST}"
 
 
 def validate_hub_url(value: str) -> str:
     parsed = urlsplit(value)
     if (
         parsed.scheme != "http"
-        or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+        or parsed.hostname != "127.0.0.1"
+        or parsed.port != 8000
         or parsed.username
         or parsed.password
         or parsed.path not in ("", "/")
         or parsed.query
         or parsed.fragment
     ):
-        raise BridgeError("HUB_API_BASE_URL must point to the local loopback Hub only.")
-    return f"http://{parsed.netloc}"
+        raise BridgeError("HUB_API_BASE_URL must be exactly http://127.0.0.1:8000.")
+    return "http://127.0.0.1:8000"
 
 
 def signing_message(timestamp: str, nonce: str, method: str, path: str, body: bytes) -> bytes:
