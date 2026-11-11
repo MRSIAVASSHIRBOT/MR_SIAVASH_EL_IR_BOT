@@ -26,14 +26,15 @@ class FakeKeyring:
 class UrlPolicyTests(unittest.TestCase):
     def test_accepts_worker_https_origin(self):
         self.assertEqual(
-            validate_worker_url("https://worker.example"),
-            "https://worker.example",
+            validate_worker_url("https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev"),
+            "https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev",
         )
 
     def test_rejects_non_https_or_path_worker_url(self):
         for value in (
-            "http://worker.example",
-            "https://worker.example/api",
+            "http://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev",
+            "https://worker.example",
+            "https://mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev/api",
             "https://user:pass@worker.example",
             "https://worker.example/?token=x",
         ):
@@ -42,13 +43,14 @@ class UrlPolicyTests(unittest.TestCase):
 
     def test_accepts_only_loopback_hub(self):
         self.assertEqual(validate_hub_url("http://127.0.0.1:8000"), "http://127.0.0.1:8000")
-        self.assertEqual(validate_hub_url("http://localhost:8000"), "http://localhost:8000")
 
     def test_rejects_remote_hub_addresses(self):
         for value in (
             "https://hub.example.com",
+            "http://localhost:8000",
             "http://192.168.1.20:8000",
             "http://0.0.0.0:8000",
+            "http://127.0.0.1:8080",
             "http://127.0.0.1:8000/private",
             "http://user:pass@127.0.0.1:8000",
         ):
