@@ -17,7 +17,7 @@ Telegram ◄── sendMessage                 Local Bridge
                                       http://127.0.0.1:8000
 ```
 
-The Worker is the public Telegram edge. It does **not** connect to the Hub, store Hub access tokens, or expose the local Hub. The Local Bridge initiates outbound HTTPS requests to the Worker, then calls only the Hub's dedicated Telegram integration endpoints over loopback.
+The Worker is the always-on Telegram edge and can run the bot's cloud-native commands without the user's computer. It does **not** connect to the Hub, store Hub access tokens, or expose the local Hub. The Local Bridge is an optional integration: when enabled, it initiates outbound HTTPS requests to the Worker, then calls only the Hub's dedicated Telegram integration endpoints over loopback. Missing Bridge configuration does not prevent the Telegram edge from becoming ready or serving cloud-native commands.
 
 Bridge requests use HMAC-SHA256 signatures bound to timestamp, nonce, HTTP method, path, and body digest. D1 stores nonce hashes to reject replay. Pairing commands are encrypted with AES-256-GCM before being stored in D1. Hub access and refresh credentials are stored by the local Bridge in the operating-system credential store through Python Keyring; there is no plaintext-file fallback.
 
@@ -37,10 +37,12 @@ Non-secret Worker variables:
 - `HUB_CLIENT_ID`: stable UUID for this Telegram client; defaults to `3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52`.
 
 Worker secrets (never commit or paste into chat):
-- `TELEGRAM_BOT_TOKEN`: token from BotFather.
-- `TELEGRAM_WEBHOOK_SECRET`: Telegram webhook secret-token value.
-- `QUEUE_ENCRYPTION_KEY`: base64url-encoded 32 cryptographically random bytes, without padding. <configured in Cloudflare>
-- `BRIDGE_SHARED_SECRET`: at least 32 random characters, shared only between Worker and the local Bridge.
+- `TELEGRAM_BOT_TOKEN`: required for the cloud bot.
+- `TELEGRAM_WEBHOOK_SECRET`: required for Telegram webhook authentication.
+- `QUEUE_ENCRYPTION_KEY`: optional HUB-Bridge integration; base64url-encoded 32 cryptographically random bytes, without padding. <configured in Cloudflare>
+- `BRIDGE_SHARED_SECRET`: optional HUB-Bridge integration; at least 32 random characters, shared only between Worker and the local Bridge.
+
+Only the Telegram token, webhook secret, owner ID, and D1 binding are required for the always-on cloud bot. The queue key and Bridge shared secret are required only for the optional local-HUB command queue.
 
 Generate values locally with Python:
 
@@ -62,7 +64,7 @@ The Worker intentionally requires the owner ID before accepting webhook updates.
 
 This is a one-time bootstrap step. Do not run bot.py while the webhook is active; it intentionally refuses to switch update modes or delete an existing webhook.
 
-## Local Bridge configuration
+## Optional Local Bridge configuration
 
 1. Start MR_SIAVASH_HUB_AI locally. Keep its API bound to `127.0.0.1:8000`.
 2. In this repository, create the local environment file:
@@ -100,8 +102,8 @@ Hub access tokens expire after 15 minutes; refresh credentials expire after 30 d
 
 ## Telegram commands
 
-- `/start`, `/help`, `/id`, `/pairinfo`: handled at the Worker edge.
-- `/pair CODE`, `/status`, `/tasks`: encrypted/queued for the local Bridge.
+- `/start`, `/help`, `/id`, `/pairinfo`: handled at the Worker edge and work without a running local Bridge.
+- `/pair CODE`, `/status`, `/tasks`: encrypted/queued for the optional local Bridge. If Bridge configuration is absent, the bot responds that HUB integration is not configured instead of failing the webhook.
 - No arbitrary shell execution, tool invocation, task creation, agent execution, approval decisions, or content publishing is exposed.
 
 ## Webhook registration
@@ -134,9 +136,9 @@ The helper checks the existing webhook and refuses to replace a different one un
 ## Health and readiness probes
 
 - `GET /health` is a liveness probe only. It confirms that the currently deployed Worker can answer requests; it does not prove that Telegram or the Bridge is configured.
-- This PR adds `GET /ready` as a readiness probe. After this Worker revision is deployed, it will return HTTP 200 only when the required Worker secrets, owner ID, D1 binding, and 32-byte base64url queue-encryption key have valid configuration. Otherwise it returns HTTP 503 with a minimal `not_ready` status.
-- Neither endpoint verifies Telegram webhook registration, the local Bridge process, OS Keyring availability, Hub pairing, or a complete Telegram-to-Hub round trip. Those remain separate acceptance checks.
+- `GET /ready` reports readiness of the Telegram cloud edge. It requires the Telegram bot token, webhook secret, owner ID, and D1 binding; it does not require the optional Bridge secrets.
+- Readiness does not verify Telegram webhook registration, the optional local Bridge process, OS Keyring availability, Hub pairing, or a complete Telegram-to-Hub round trip. Those remain separate acceptance checks.
 
 ## Current provisioning status
 
-The Worker subdomain, D1 database, binding, schema, observability, and cleanup Cron are provisioned. The latest Local Bridge Worker source is deployed. `QUEUE_ENCRYPTION_KEY` is configured in Cloudflare. `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BRIDGE_SHARED_SECRET`, the owner ID, and webhook registration remain deployment gates. No live Telegram pairing or end-to-end round trip is claimed.
+The Worker subdomain, D1 database, binding, schema, observability, and cleanup Cron are provisioned. The cloud-first Worker source is deployed. `QUEUE_ENCRYPTION_KEY` is configured in Cloudflare. `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, the owner ID, and webhook registration remain required for live Telegram operation. `BRIDGE_SHARED_SECRET` is optional and is needed only if local-HUB integration is enabled. No live Telegram webhook or end-to-end round trip is claimed.
