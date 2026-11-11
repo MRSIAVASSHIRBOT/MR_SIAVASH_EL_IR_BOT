@@ -138,6 +138,12 @@ function validateEnvironment(env) {
   if (!/^\d{1,20}$/.test(String(env.ALLOWED_TELEGRAM_USER_ID || ""))) return "Owner Telegram ID is invalid";
   if (String(env.BRIDGE_SHARED_SECRET).length < 32) return "Bridge shared secret is too short";
   if (!/^[A-Za-z0-9_-]{32,128}$/.test(String(env.TELEGRAM_WEBHOOK_SECRET))) return "Telegram webhook secret format is invalid";
+  if (!/^[A-Za-z0-9_-]{43}$/.test(String(env.QUEUE_ENCRYPTION_KEY))) return "Queue encryption key format is invalid";
+  try {
+    if (base64UrlToBytes(env.QUEUE_ENCRYPTION_KEY).byteLength !== 32) return "Queue encryption key must encode exactly 32 bytes";
+  } catch {
+    return "Queue encryption key format is invalid";
+  }
   return null;
 }
 
@@ -306,6 +312,13 @@ export default {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ status: "ok", service: "mr-siavash-el-ir-bot-edge" });
+    }
+    if (request.method === "GET" && url.pathname === "/ready") {
+      const ready = validateEnvironment(env) === null;
+      return json(
+        { status: ready ? "ready" : "not_ready", service: "mr-siavash-el-ir-bot-edge" },
+        ready ? 200 : 503,
+      );
     }
 
     if (url.pathname === "/telegram/webhook") {
