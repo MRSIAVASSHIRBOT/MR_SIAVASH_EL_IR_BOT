@@ -118,3 +118,33 @@ test("/pairinfo formats the Telegram identity details as separate lines", async 
     globalThis.fetch = previousFetch;
   }
 });
+
+
+test("/ready reports liveness separately from configured service readiness", async () => {
+  const live = await worker.fetch(new Request("https://worker.example/health"), {});
+  assert.equal(live.status, 200);
+  const unconfigured = await worker.fetch(new Request("https://worker.example/ready"), {});
+  assert.equal(unconfigured.status, 503);
+  assert.deepEqual(await unconfigured.json(), {
+    status: "not_ready",
+    service: "mr-siavash-el-ir-bot-edge",
+  });
+  const ready = await worker.fetch(new Request("https://worker.example/ready"), bridgeEnv);
+  assert.equal(ready.status, 200);
+  assert.deepEqual(await ready.json(), {
+    status: "ready",
+    service: "mr-siavash-el-ir-bot-edge",
+  });
+});
+
+test("readiness rejects malformed queue encryption keys before accepting traffic", async () => {
+  const response = await worker.fetch(new Request("https://worker.example/ready"), {
+    ...bridgeEnv,
+    QUEUE_ENCRYPTION_KEY: "not-a-valid-32-byte-base64url-key",
+  });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    status: "not_ready",
+    service: "mr-siavash-el-ir-bot-edge",
+  });
+});
