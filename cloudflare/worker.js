@@ -130,17 +130,27 @@ async function sendMessage(env, chatId, text) {
   });
 }
 
-function validateEnvironment(env) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET || !env.QUEUE_ENCRYPTION_KEY || !env.BRIDGE_SHARED_SECRET) {
-    return "Required service secrets are missing";
+function validateTelegramEnvironment(env) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) {
+    return "Telegram bot credentials are missing";
   }
   if (!env.DB || typeof env.DB.prepare !== "function") return "D1 database binding is missing";
   if (!/^\d{1,20}$/.test(String(env.ALLOWED_TELEGRAM_USER_ID || ""))) return "Owner Telegram ID is invalid";
-  if (String(env.BRIDGE_SHARED_SECRET).length < 32) return "Bridge shared secret is too short";
   if (!/^[A-Za-z0-9_-]{32,128}$/.test(String(env.TELEGRAM_WEBHOOK_SECRET))) return "Telegram webhook secret format is invalid";
-  if (!/^[A-Za-z0-9_-]{43}$/.test(String(env.QUEUE_ENCRYPTION_KEY))) return "Queue encryption key format is invalid";
+  return null;
+}
+
+function validateBridgeEnvironment(env) {
+  if (!env.BRIDGE_SHARED_SECRET || String(env.BRIDGE_SHARED_SECRET).length < 32) {
+    return "Bridge shared secret is missing or too short";
+  }
+  if (!/^[A-Za-z0-9_-]{43}$/.test(String(env.QUEUE_ENCRYPTION_KEY || ""))) {
+    return "Queue encryption key format is invalid";
+  }
   try {
-    if (base64UrlToBytes(env.QUEUE_ENCRYPTION_KEY).byteLength !== 32) return "Queue encryption key must encode exactly 32 bytes";
+    if (base64UrlToBytes(env.QUEUE_ENCRYPTION_KEY).byteLength !== 32) {
+      return "Queue encryption key must encode exactly 32 bytes";
+    }
   } catch {
     return "Queue encryption key format is invalid";
   }
@@ -213,6 +223,10 @@ async function handleTelegramMessage(env, update) {
     return;
   }
   if (command === "/pair") {
+    if (validateBridgeEnvironment(env)) {
+      await sendMessage(env, chatId, "اتصال HUB هنوز پیکربندی نشده است؛ فرمان‌های ابری ربات مستقل از این بخش فعال می‌مانند.");
+      return;
+    }
     if (args.length !== 1 || args[0].length < 32 || args[0].length > 128) {
       await sendMessage(env, chatId, "فرمت صحیح: /pair کد_یک‌بارمصرف");
       return;
@@ -222,6 +236,10 @@ async function handleTelegramMessage(env, update) {
     return;
   }
   if (command === "/status" || command === "/tasks") {
+    if (validateBridgeEnvironment(env)) {
+      await sendMessage(env, chatId, "اتصال HUB هنوز پیکربندی نشده است؛ فرمان‌های ابری ربات مستقل از این بخش فعال می‌مانند.");
+      return;
+    }
     const queued = await enqueueJob(env, update.update_id, chatId, userId, { command: command.slice(1) });
     if (!queued) await sendMessage(env, chatId, "صف درخواست‌ها موقتاً پر است؛ کمی بعد دوباره تلاش کن.");
     return;
@@ -314,7 +332,7 @@ export default {
       return json({ status: "ok", service: "mr-siavash-el-ir-bot-edge" });
     }
     if (request.method === "GET" && url.pathname === "/ready") {
-      const ready = validateEnvironment(env) === null;
+      const ready = validateTelegramEnvironment(env) === null;
       return json(
         { status: ready ? "ready" : "not_ready", service: "mr-siavash-el-ir-bot-edge" },
         ready ? 200 : 503,
@@ -323,7 +341,7 @@ export default {
 
     if (url.pathname === "/telegram/webhook") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      const configError = validateEnvironment(env);
+      const configError = validateTelegramEnvironment(env);
       if (configError) return json({ error: "service_not_configured" }, 503);
       const receivedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
       if (!constantTimeEqual(receivedSecret, env.TELEGRAM_WEBHOOK_SECRET)) {
@@ -352,7 +370,7 @@ export default {
 
     if (url.pathname === "/bridge/pull" || url.pathname === "/bridge/complete") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      if (!env.DB || !env.BRIDGE_SHARED_SECRET || !env.QUEUE_ENCRYPTION_KEY) {
+      if (validateBridgeEnvironment(env) || !env.DB || typeof env.DB.prepare !== "function") {
         return json({ error: "service_not_configured" }, 503);
       }
       const parsed = await readBoundedJson(request);
