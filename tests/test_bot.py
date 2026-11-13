@@ -2,7 +2,16 @@ import os
 import unittest
 from unittest.mock import patch
 
-from bot import (BotConfigurationError, Config, NoRedirectHandler, TelegramAPI, TelegramAPIError, command_name, make_reply, parse_user_ids)
+from bot import (
+    BotConfigurationError,
+    Config,
+    NoRedirectHandler,
+    TelegramAPI,
+    TelegramAPIError,
+    command_name,
+    make_reply,
+    parse_user_ids,
+)
 
 
 class ConfigTests(unittest.TestCase):
