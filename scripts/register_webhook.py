@@ -27,11 +27,11 @@ def validate_webhook_url(value: str) -> bool:
         and not parsed.fragment
     )
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from bot import load_local_env, telegram_opener
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from bot import load_local_env, telegram_opener  # noqa: E402
 
 
 def telegram_call(token: str, method: str, payload: dict | None = None):
