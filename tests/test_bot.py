@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from bot import BotConfigurationError, Config, command_name, make_reply, parse_user_ids
+from bot import (BotConfigurationError, Config, NoRedirectHandler, TelegramAPI, TelegramAPIError, command_name, make_reply, parse_user_ids)
 
 
 class ConfigTests(unittest.TestCase):
@@ -40,6 +40,40 @@ class HandlerPolicyTests(unittest.TestCase):
 
     def test_allowed_user_gets_status(self):
         self.assertIn("فعال", make_reply("/status", 123, frozenset({123})))
+
+
+
+class TelegramTransportTests(unittest.TestCase):
+    def test_token_bearing_api_requests_do_not_follow_redirects(self):
+        from urllib.request import Request
+
+        handler = NoRedirectHandler()
+        request = Request("https://api.telegram.org/botplaceholder/getMe")
+        self.assertIsNone(
+            handler.redirect_request(
+                request, None, 302, "Found", {}, "https://attacker.invalid/collect"
+            )
+        )
+
+    def test_oversized_api_response_is_rejected(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def read(self, limit):
+                return b"x" * limit
+
+        class FakeOpener:
+            def open(self, request, timeout):
+                return FakeResponse()
+
+        with patch("bot.telegram_opener", return_value=FakeOpener()):
+            api = TelegramAPI("placeholder-token")
+            with self.assertRaisesRegex(TelegramAPIError, "size limit"):
+                api.call("getMe")
 
 
 if __name__ == "__main__":
