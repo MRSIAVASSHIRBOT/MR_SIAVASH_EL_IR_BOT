@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 EXPECTED_WEBHOOK_HOST = "mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev"
+MAX_API_RESPONSE_BYTES = 64 * 1024
 
 
 def validate_webhook_url(value: str) -> bool:
@@ -28,9 +29,9 @@ def validate_webhook_url(value: str) -> bool:
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
-from bot import load_local_env
+from bot import load_local_env, telegram_opener
 
 
 def telegram_call(token: str, method: str, payload: dict | None = None):
@@ -41,8 +42,11 @@ def telegram_call(token: str, method: str, payload: dict | None = None):
         method="POST",
     )
     try:
-        with urlopen(request, timeout=15) as response:
-            result = json.loads(response.read().decode("utf-8"))
+        with telegram_opener().open(request, timeout=15) as response:
+            raw = response.read(MAX_API_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_API_RESPONSE_BYTES:
+                raise RuntimeError("Telegram API response exceeded the configured size limit.")
+            result = json.loads(raw.decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, json.JSONDecodeError):
         raise RuntimeError("Telegram API request failed; check network access and local configuration.") from None
     if not isinstance(result, dict) or not result.get("ok"):
