@@ -3,8 +3,24 @@ name: tests
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "feature/**"]
+    branches: ["feature/**"]
+    paths:
+      - "bot.py"
+      - "bridge.py"
+      - "cloudflare/**"
+      - "scripts/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "package.json"
   pull_request:
+    paths:
+      - "bot.py"
+      - "bridge.py"
+      - "cloudflare/**"
+      - "scripts/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "package.json"
 
 permissions:
   contents: read
