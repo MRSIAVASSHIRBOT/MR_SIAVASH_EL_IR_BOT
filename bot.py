@@ -12,10 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 LOGGER = logging.getLogger("mr_siavash_bot")
 MAX_MESSAGE_LENGTH = 4096
+MAX_API_RESPONSE_BYTES = 1_048_576
 
 
 class BotConfigurationError(RuntimeError):
@@ -24,6 +25,18 @@ class BotConfigurationError(RuntimeError):
 
 class TelegramAPIError(RuntimeError):
     """Raised for Telegram API or network failures without exposing credentials."""
+
+
+class NoRedirectHandler(HTTPRedirectHandler):
+    """Prevent a token-bearing Telegram API URL from following redirects."""
+
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
+
+
+def telegram_opener():
+    """Build an opener that refuses HTTP redirects for token-bearing API URLs."""
+    return build_opener(NoRedirectHandler())
 
 
 def load_local_env(path: str = ".env") -> None:
@@ -80,6 +93,7 @@ class TelegramAPI:
     def __init__(self, token: str, request_timeout: int = 40) -> None:
         self._base_url = f"https://api.telegram.org/bot{token}/"
         self._request_timeout = request_timeout
+        self._opener = telegram_opener()
 
     def call(self, method: str, payload: dict[str, Any] | None = None) -> Any:
         body = json.dumps(payload or {}).encode("utf-8")
@@ -90,8 +104,11 @@ class TelegramAPI:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=self._request_timeout) as response:
-                result = json.loads(response.read().decode("utf-8"))
+            with self._opener.open(request, timeout=self._request_timeout) as response:
+                raw = response.read(MAX_API_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_API_RESPONSE_BYTES:
+                    raise TelegramAPIError("Telegram API response exceeded the configured size limit.")
+                result = json.loads(raw.decode("utf-8"))
         except HTTPError as error:
             raise TelegramAPIError(f"Telegram API returned HTTP {error.code}.") from None
         except (URLError, TimeoutError, OSError):
