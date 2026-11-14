@@ -23,15 +23,19 @@ class ConfigTests(unittest.TestCase):
             parse_user_ids("123,not-a-number")
 
     def test_config_requires_token(self):
-        with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "", "ALLOWED_USER_IDS": ""}, clear=True):
-            with self.assertRaises(BotConfigurationError):
-                Config.from_env()
+        with (
+            patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "", "ALLOWED_USER_IDS": ""}, clear=True),
+            self.assertRaises(BotConfigurationError),
+        ):
+            Config.from_env()
 
     def test_config_validates_poll_timeout(self):
         env = {"TELEGRAM_BOT_TOKEN": "test-token", "POLL_TIMEOUT": "90"}
-        with patch.dict(os.environ, env, clear=True):
-            with self.assertRaises(BotConfigurationError):
-                Config.from_env()
+        with (
+            patch.dict(os.environ, env, clear=True),
+            self.assertRaises(BotConfigurationError),
+        ):
+            Config.from_env()
 
 
 class HandlerPolicyTests(unittest.TestCase):
