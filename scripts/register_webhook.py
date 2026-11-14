@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Register the Cloudflare Worker as Telegram's webhook without exposing the bot token."""
 
 from __future__ import annotations
@@ -8,8 +7,8 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request
 
 EXPECTED_WEBHOOK_HOST = "mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev"
@@ -30,7 +29,7 @@ def validate_webhook_url(value: str) -> bool:
     )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bot import load_local_env, telegram_opener  # noqa: E402
+from bot import load_local_env, telegram_opener
 
 
 def telegram_call(token: str, method: str, payload: dict | None = None):
