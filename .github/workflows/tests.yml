@@ -3,8 +3,9 @@ name: tests
 on:
   workflow_dispatch:
   push:
-    branches: ["feature/**"]
+    branches: ["main", "feature/**"]
     paths:
+      - ".github/workflows/**"
       - "bot.py"
       - "bridge.py"
       - "cloudflare/**"
@@ -15,6 +16,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - ".github/workflows/**"
       - "bot.py"
       - "bridge.py"
       - "cloudflare/**"
