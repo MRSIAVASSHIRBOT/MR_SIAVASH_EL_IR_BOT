@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Outbound-only bridge between Cloudflare Worker and the loopback-only Hub."""
 
 from __future__ import annotations
@@ -87,7 +86,7 @@ def validate_hub_url(value: str) -> str:
 
 def signing_message(timestamp: str, nonce: str, method: str, path: str, body: bytes) -> bytes:
     digest = hashlib.sha256(body).hexdigest()
-    return "\n".join((timestamp, nonce, method.upper(), path, digest)).encode("utf-8")
+    return f"{timestamp}\n{nonce}\n{method.upper()}\n{path}\n{digest}".encode("utf-8")
 
 
 def sign_request(secret: str, timestamp: str, nonce: str, method: str, path: str, body: bytes) -> str:
@@ -149,7 +148,7 @@ class BridgeConfig:
     shared_secret: str
 
     @classmethod
-    def from_env(cls) -> "BridgeConfig":
+    def from_env(cls) -> BridgeConfig:
         worker = validate_worker_url(os.getenv("BRIDGE_BASE_URL", DEFAULT_WORKER_URL).strip())
         hub = validate_hub_url(os.getenv("HUB_API_BASE_URL", "http://127.0.0.1:8000").strip())
         client_id = os.getenv("HUB_CLIENT_ID", HUB_CLIENT_ID_DEFAULT).strip()
