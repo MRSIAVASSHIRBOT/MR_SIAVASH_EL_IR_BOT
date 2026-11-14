@@ -9,6 +9,8 @@ import re
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.request import Request
 
 EXPECTED_WEBHOOK_HOST = "mr-siavash-el-ir-bot.mrsiavashirbot.workers.dev"
 MAX_API_RESPONSE_BYTES = 64 * 1024
@@ -26,9 +28,6 @@ def validate_webhook_url(value: str) -> bool:
         and not parsed.query
         and not parsed.fragment
     )
-
-from urllib.error import HTTPError, URLError
-from urllib.request import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bot import load_local_env, telegram_opener  # noqa: E402
