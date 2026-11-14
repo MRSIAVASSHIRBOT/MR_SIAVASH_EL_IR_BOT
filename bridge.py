@@ -86,7 +86,7 @@ def validate_hub_url(value: str) -> str:
 
 def signing_message(timestamp: str, nonce: str, method: str, path: str, body: bytes) -> bytes:
     digest = hashlib.sha256(body).hexdigest()
-    return f"{timestamp}\n{nonce}\n{method.upper()}\n{path}\n{digest}".encode("utf-8")
+    return f"{timestamp}\n{nonce}\n{method.upper()}\n{path}\n{digest}".encode()
 
 
 def sign_request(secret: str, timestamp: str, nonce: str, method: str, path: str, body: bytes) -> str:
