@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Minimal, allowlist-aware Telegram bot using only the Python standard library."""
 
 from __future__ import annotations
@@ -75,7 +74,7 @@ class Config:
     poll_timeout: int = 30
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         if not token or token == "replace_with_your_token":
             raise BotConfigurationError("TELEGRAM_BOT_TOKEN is not configured.")
