@@ -350,8 +350,9 @@ class LocalBridge:
                     return "در حال حاضر کاری برای نمایش وجود ندارد."
                 lines = []
                 for index, task in enumerate(tasks[:10], 1):
-                    description = str(task.get("description") or task.get("task_type") or "کار")[:160]
-                    lines.append(f"{index}. {description} — {task.get('status', 'نامشخص')}")
+                    description = str(task.get("description") or task.get("task_type") or "کار")[:120]
+                    task_id = str(task.get("task_id") or "شناسه ناموجود")[:36]
+                    lines.append(f"{index}. [{task_id}] {description} — {task.get('status', 'نامشخص')}")
                 return "\n".join(lines)
             if command == "task":
                 if "tasks:create" not in session.get("scopes", []):
@@ -382,6 +383,23 @@ class LocalBridge:
                 else:
                     state_text = f"وضعیت فعلی: {status}"
                 return f"کار در HUB ثبت شد.\nشناسه: {task_id}\nنوع: {task_type}\nریسک: {risk}\n{state_text}"
+            if command == "task_result":
+                if "tasks:result" not in session.get("scopes", []):
+                    return "مجوز tasks:result برای این ربات صادر نشده است. سطح دسترسی را از پنل HUB مدیریت کن."
+                task_id = payload.get("task_id")
+                if not isinstance(task_id, str) or not re.fullmatch(
+                    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                    task_id,
+                ):
+                    return "شناسه کار معتبر نیست."
+                result = self._hub_request(
+                    f"/integrations/telegram/tasks/{task_id}/result",
+                    access_token=headers_token,
+                )
+                rendered = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+                if len(rendered) > 3500:
+                    rendered = rendered[:3500] + "… [ادامه نتیجه محدود شد]"
+                return f"نتیجه کار {task_id}:\n{rendered}"
             return "این فرمان در Bridge تعریف نشده است."
         except BridgeError as exc:
             return str(exc)
