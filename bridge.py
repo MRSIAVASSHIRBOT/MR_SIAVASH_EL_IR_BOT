@@ -168,7 +168,35 @@ class BridgeConfig:
         )
 
 
-def request_json(url: str, method: str, body: bytes | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
+def _log_hub_request(request_id: str | None, method: str, route_template: str | None,
+                     status_code: int | None, outcome: str) -> None:
+    if request_id is not None and route_template is not None:
+        LOGGER.info(
+            "hub_request_completed request_id=%s method=%s route_template=%s status_code=%s outcome=%s",
+            request_id,
+            method.upper(),
+            route_template,
+            status_code,
+            outcome,
+            extra={
+                "request_id": request_id,
+                "method": method.upper(),
+                "route_template": route_template,
+                "status_code": status_code,
+                "outcome": outcome,
+            },
+        )
+
+
+def request_json(
+    url: str,
+    method: str,
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    *,
+    request_id: str | None = None,
+    route_template: str | None = None,
+) -> dict[str, Any]:
     request = Request(
         url,
         data=body,
@@ -178,18 +206,25 @@ def request_json(url: str, method: str, body: bytes | None = None, headers: dict
     opener = build_opener(NoRedirectHandler())
     try:
         with opener.open(request, timeout=10) as response:
+            status_code = response.status
             raw = response.read(MAX_RESPONSE_BYTES + 1)
             if len(raw) > MAX_RESPONSE_BYTES:
+                _log_hub_request(request_id, method, route_template, status_code, "invalid_response")
                 raise BridgeError("A remote response exceeded the configured size limit.")
             result = json.loads(raw.decode("utf-8"))
     except HTTPError as exc:
+        _log_hub_request(request_id, method, route_template, exc.code, "http_error")
         raise BridgeError(f"Service request failed with HTTP {exc.code}.") from None
     except (URLError, TimeoutError, OSError):
+        _log_hub_request(request_id, method, route_template, None, "transport_error")
         raise BridgeError("A required service is unavailable or unreachable.") from None
     except (UnicodeDecodeError, json.JSONDecodeError):
+        _log_hub_request(request_id, method, route_template, locals().get("status_code"), "invalid_response")
         raise BridgeError("A service returned an invalid response.") from None
     if not isinstance(result, dict):
+        _log_hub_request(request_id, method, route_template, status_code, "invalid_response")
         raise BridgeError("A service returned an unexpected response.")
+    _log_hub_request(request_id, method, route_template, status_code, "success")
     return result
 
 
@@ -233,14 +268,32 @@ class LocalBridge:
                      access_token: str | None = None,
                      extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
         request_id = str(uuid4())
-        headers = {"Content-Type": "application/json", "X-Request-ID": request_id}
+        headers = {"Content-Type": "application/json"}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
             headers["X-Telegram-User-Id"] = str(self.config.telegram_owner_id)
         if extra_headers:
             headers.update(extra_headers)
+        headers["X-Request-ID"] = request_id
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8") if payload is not None else None
-        return request_json(self.config.hub_base_url + path, method, body, headers)
+        route_path = urlsplit(path).path
+        route_templates = {
+            "/integrations/telegram/exchange": "/integrations/telegram/exchange",
+            "/integrations/telegram/refresh": "/integrations/telegram/refresh",
+            "/integrations/telegram/status": "/integrations/telegram/status",
+            "/integrations/telegram/tasks": "/integrations/telegram/tasks",
+        }
+        route_template = route_templates.get(route_path, "unmatched")
+        if route_path.startswith("/integrations/telegram/tasks/") and route_path.endswith("/result"):
+            route_template = "/integrations/telegram/tasks/{task_id}/result"
+        return request_json(
+            self.config.hub_base_url + path,
+            method,
+            body,
+            headers,
+            request_id=request_id,
+            route_template=route_template,
+        )
 
     def _pair(self, pairing_code: str) -> str:
         if self._load_hub_session():

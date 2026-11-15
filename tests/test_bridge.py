@@ -6,6 +6,7 @@ from uuid import UUID
 from bridge import (
     BridgeError,
     LocalBridge,
+    request_json,
     sign_request,
     signing_message,
     validate_hub_url,
@@ -233,13 +234,16 @@ class HubRequestCorrelationTests(unittest.TestCase):
         })()
         calls = []
 
-        def capture(url, method, body, headers):
-            calls.append((url, method, body, headers))
+        def capture(url, method, body, headers, **kwargs):
+            calls.append((url, method, body, headers, kwargs))
             return {"ok": True}
 
         with patch("bridge.request_json", side_effect=capture):
-            first = bridge._hub_request("/health")
-            second = bridge._hub_request("/health")
+            first = bridge._hub_request(
+                "/integrations/telegram/tasks/c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
+                extra_headers={"X-Request-ID": "caller-controlled"},
+            )
+            second = bridge._hub_request("/integrations/telegram/status")
 
         self.assertEqual(first, {"ok": True})
         self.assertEqual(second, {"ok": True})
@@ -247,10 +251,68 @@ class HubRequestCorrelationTests(unittest.TestCase):
         first_id = calls[0][3]["X-Request-ID"]
         second_id = calls[1][3]["X-Request-ID"]
         self.assertEqual(str(UUID(first_id)), first_id)
+        self.assertNotEqual(first_id, "caller-controlled")
         self.assertEqual(str(UUID(second_id)), second_id)
         self.assertNotEqual(first_id, second_id)
-        self.assertEqual(calls[0][0], "http://127.0.0.1:8000/health")
+        self.assertEqual(
+            calls[0][0],
+            "http://127.0.0.1:8000/integrations/telegram/tasks/"
+            "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
+        )
         self.assertEqual(calls[0][1], "GET")
+        self.assertEqual(calls[0][4]["request_id"], first_id)
+        self.assertEqual(
+            calls[0][4]["route_template"],
+            "/integrations/telegram/tasks/{task_id}/result",
+        )
+
+
+class HubRequestLoggingTests(unittest.TestCase):
+    def test_request_log_uses_safe_route_template_and_outcome_fields(self):
+        class FakeResponse:
+            status = 201
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return b'{"accepted":true}'
+
+        class FakeOpener:
+            def open(self, _request, timeout):
+                self.timeout = timeout
+                return FakeResponse()
+
+        request_id = "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2"
+        opener = FakeOpener()
+        with patch("bridge.build_opener", return_value=opener), self.assertLogs(
+            "mr_siavash_bridge", level="INFO"
+        ) as captured:
+            result = request_json(
+                "http://127.0.0.1:8000/integrations/telegram/tasks/"
+                "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
+                "GET",
+                headers={"X-Request-ID": request_id},
+                request_id=request_id,
+                route_template="/integrations/telegram/tasks/{task_id}/result",
+            )
+
+        self.assertEqual(result, {"accepted": True})
+        self.assertIn(f"request_id={request_id}", captured.output[0])
+        self.assertIn("method=GET", captured.output[0])
+        self.assertIn("status_code=201", captured.output[0])
+        self.assertIn("outcome=success", captured.output[0])
+        self.assertIn(
+            "route_template=/integrations/telegram/tasks/{task_id}/result",
+            captured.output[0],
+        )
+        self.assertNotIn(
+            "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
+            captured.output[0],
+        )
 
 
 if __name__ == "__main__":
