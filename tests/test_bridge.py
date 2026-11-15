@@ -207,11 +207,15 @@ class TaskResultTests(unittest.TestCase):
 
     def test_task_result_denies_missing_scope_and_invalid_ids(self):
         task_id = "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2"
-        bridge = self._bridge(["status:read"])
+        denied_bridge = self._bridge(["status:read"])
         calls = []
-        bridge._hub_request = lambda *args, **kwargs: calls.append((args, kwargs))
-        denied = bridge.process_job(self._job(task_id))
-        invalid = bridge.process_job(self._job("../../private"))
+        denied_bridge._hub_request = lambda *args, **kwargs: calls.append((args, kwargs))
+        denied = denied_bridge.process_job(self._job(task_id))
+
+        scoped_bridge = self._bridge(["tasks:result"])
+        scoped_bridge._hub_request = lambda *args, **kwargs: calls.append((args, kwargs))
+        invalid = scoped_bridge.process_job(self._job("../../private"))
+
         self.assertIn("tasks:result", denied)
         self.assertIn("شناسه کار معتبر نیست", invalid)
         self.assertEqual(calls, [])
