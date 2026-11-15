@@ -174,5 +174,48 @@ class TaskSubmissionTests(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+class TaskResultTests(unittest.TestCase):
+    def _bridge(self, scopes):
+        bridge = LocalBridge.__new__(LocalBridge)
+        bridge.config = type("Config", (), {"telegram_owner_id": 123456789})()
+        bridge._session = lambda: {"access_token": "access-secret", "scopes": scopes}
+        return bridge
+
+    def _job(self, task_id):
+        return {
+            "telegram_user_id": 123456789,
+            "chat_id": 123456789,
+            "payload": {"command": "task_result", "task_id": task_id},
+        }
+
+    def test_task_result_requires_scope_and_reads_only_the_owned_result_endpoint(self):
+        task_id = "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2"
+        bridge = self._bridge(["tasks:result"])
+        calls = []
+
+        def hub_request(path, method="GET", payload=None, access_token=None, extra_headers=None):
+            calls.append((path, method, access_token))
+            return {"result": {"message": "completed"}, "error_code": None, "attempt_count": 1}
+
+        bridge._hub_request = hub_request
+        reply = bridge.process_job(self._job(task_id))
+        self.assertEqual(calls, [(
+            f"/integrations/telegram/tasks/{task_id}/result", "GET", "access-secret"
+        )])
+        self.assertIn("completed", reply)
+        self.assertNotIn("access-secret", reply)
+
+    def test_task_result_denies_missing_scope_and_invalid_ids(self):
+        task_id = "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2"
+        bridge = self._bridge(["status:read"])
+        calls = []
+        bridge._hub_request = lambda *args, **kwargs: calls.append((args, kwargs))
+        denied = bridge.process_job(self._job(task_id))
+        invalid = bridge.process_job(self._job("../../private"))
+        self.assertIn("tasks:result", denied)
+        self.assertIn("شناسه کار معتبر نیست", invalid)
+        self.assertEqual(calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
