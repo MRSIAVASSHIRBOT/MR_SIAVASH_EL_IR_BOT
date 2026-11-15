@@ -185,6 +185,40 @@ test("cloud Telegram commands work without any local Bridge secrets", async () =
   }
 });
 
+test("/help lists each supported command exactly once", async () => {
+  const previousFetch = globalThis.fetch;
+  let sentMessage = null;
+  globalThis.fetch = async (_url, options) => {
+    sentMessage = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        update_id: 5,
+        message: {
+          from: { id: 123456789 },
+          chat: { id: 123456789, type: "private" },
+          text: "/help",
+        },
+      }),
+    }), telegramOnlyEnv());
+    assert.equal(response.status, 200);
+    assert.ok(sentMessage);
+    const taskResultEntries = sentMessage.text.split("\n").filter((line) => line.startsWith("/taskresult "));
+    assert.equal(taskResultEntries.length, 1);
+    assert.ok(sentMessage.text.includes("/task TYPE | DESCRIPTION"));
+    assert.ok(sentMessage.text.includes("/taskresult UUID"));
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("Hub commands fail gracefully when the optional Bridge is offline or unconfigured", async () => {
   const previousFetch = globalThis.fetch;
   let sentMessage = null;
