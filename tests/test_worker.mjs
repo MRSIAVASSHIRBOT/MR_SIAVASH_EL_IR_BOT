@@ -393,3 +393,73 @@ test("/task rejects malformed input without enqueueing a Hub job", async () => {
     globalThis.fetch = previousFetch;
   }
 });
+
+
+test("/taskresult queues a scoped, encrypted result lookup for a validated UUID", async () => {
+  const captured = [];
+  const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+    },
+    body: JSON.stringify({
+      update_id: 22345,
+      message: {
+        from: { id: 123456789 },
+        chat: { id: 123456789, type: "private" },
+        text: "/taskresult c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2",
+      },
+    }),
+  }), { ...bridgeEnv, DB: jobQueueDb(captured) });
+
+  assert.equal(response.status, 200);
+  assert.equal(captured.length, 1);
+  const [, updateId, , , encryptedPayload] = captured[0];
+  assert.equal(updateId, 22345);
+  assert.equal(encryptedPayload.includes("c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2"), false);
+  const record = JSON.parse(encryptedPayload);
+  const keyBytes = Uint8Array.from(atob(bridgeEnv.QUEUE_ENCRYPTION_KEY), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: new Uint8Array(record.iv) },
+    key,
+    new Uint8Array(record.ciphertext),
+  );
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(plaintext)), {
+    command: "task_result",
+    task_id: "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2",
+  });
+});
+
+test("/taskresult rejects invalid UUIDs without enqueueing a job", async () => {
+  const captured = [];
+  let sentMessage = null;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => {
+    sentMessage = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        update_id: 22346,
+        message: {
+          from: { id: 123456789 },
+          chat: { id: 123456789, type: "private" },
+          text: "/taskresult ../../private",
+        },
+      }),
+    }), { ...bridgeEnv, DB: jobQueueDb(captured) });
+    assert.equal(response.status, 200);
+    assert.equal(captured.length, 0);
+    assert.match(sentMessage.text, /فرمت صحیح/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});

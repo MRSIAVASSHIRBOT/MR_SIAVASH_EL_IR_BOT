@@ -220,7 +220,7 @@ async function handleTelegramMessage(env, update) {
     return;
   }
   if (command === "/help") {
-    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pairinfo — اطلاعات جفت‌سازی\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)\n/task TYPE | DESCRIPTION — ثبت کار از مسیر سیاست HUB (نیازمند tasks:create)");
+    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pairinfo — اطلاعات جفت‌سازی\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)\n/task TYPE | DESCRIPTION — ثبت کار از مسیر سیاست HUB (نیازمند tasks:create)\n/taskresult UUID — دریافت نتیجه نهایی کار (نیازمند tasks:result)\n/taskresult UUID — دریافت نتیجه نهایی کار (نیازمند tasks:result)");
     return;
   }
   if (command === "/id") {
@@ -280,6 +280,23 @@ async function handleTelegramMessage(env, update) {
       task_type: taskType,
       description,
       idempotency_key: "telegram-update-" + update.update_id,
+    });
+    if (!queued) await sendMessage(env, chatId, "صف درخواست‌ها موقتاً پر است؛ کمی بعد دوباره تلاش کن.");
+    return;
+  }
+  if (command === "/taskresult") {
+    if (validateBridgeEnvironment(env)) {
+      await sendMessage(env, chatId, "اتصال HUB هنوز پیکربندی نشده است؛ فرمان‌های ابری ربات مستقل از این بخش فعال می‌مانند.");
+      return;
+    }
+    const taskId = args.length === 1 ? args[0] : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId)) {
+      await sendMessage(env, chatId, "فرمت صحیح: /taskresult شناسه-کامل-کار");
+      return;
+    }
+    const queued = await enqueueJob(env, update.update_id, chatId, userId, {
+      command: "task_result",
+      task_id: taskId,
     });
     if (!queued) await sendMessage(env, chatId, "صف درخواست‌ها موقتاً پر است؛ کمی بعد دوباره تلاش کن.");
     return;
