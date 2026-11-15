@@ -1,2 +1,2 @@
 # Required for secure OS credential storage (Windows Credential Manager, macOS Keychain, Linux Secret Service).
-keyring>=25,<27
+keyring>=25.7.0,<27
