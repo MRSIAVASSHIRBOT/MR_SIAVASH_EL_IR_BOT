@@ -154,7 +154,7 @@ class TaskSubmissionTests(unittest.TestCase):
         })
         self.assertEqual(calls[0][3], "access-secret")
         self.assertEqual(calls[0][4], {"Idempotency-Key": "telegram-update-12345"})
-        self.assertIn("waiting approval", reply)
+        self.assertIn("تأیید مالک", reply)
         self.assertNotIn("access-secret", reply)
 
     def test_task_submission_requires_explicit_scope(self):
