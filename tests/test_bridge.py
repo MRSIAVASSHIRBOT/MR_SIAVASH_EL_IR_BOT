@@ -240,7 +240,8 @@ class HubRequestCorrelationTests(unittest.TestCase):
 
         with patch("bridge.request_json", side_effect=capture):
             first = bridge._hub_request(
-                "/integrations/telegram/tasks/c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result"
+                "/integrations/telegram/tasks/c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
+                extra_headers={"X-Request-ID": "caller-controlled"},
             )
             second = bridge._hub_request("/integrations/telegram/status")
 
@@ -250,6 +251,7 @@ class HubRequestCorrelationTests(unittest.TestCase):
         first_id = calls[0][3]["X-Request-ID"]
         second_id = calls[1][3]["X-Request-ID"]
         self.assertEqual(str(UUID(first_id)), first_id)
+        self.assertNotEqual(first_id, "caller-controlled")
         self.assertEqual(str(UUID(second_id)), second_id)
         self.assertNotEqual(first_id, second_id)
         self.assertEqual(
