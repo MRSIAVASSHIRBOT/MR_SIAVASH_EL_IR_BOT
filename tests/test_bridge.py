@@ -223,8 +223,6 @@ class TaskResultTests(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 class HubRequestCorrelationTests(unittest.TestCase):
     def test_hub_request_sends_a_fresh_canonical_uuid_request_id(self):
@@ -254,3 +252,6 @@ class HubRequestCorrelationTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "http://127.0.0.1:8000/health")
         self.assertEqual(calls[0][1], "GET")
 
+
+if __name__ == "__main__":
+    unittest.main()
