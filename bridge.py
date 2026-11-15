@@ -34,6 +34,14 @@ class BridgeError(RuntimeError):
     """A safe, user-displayable bridge failure."""
 
 
+class HubHTTPError(BridgeError):
+    """A Hub HTTP failure with a machine-readable status code."""
+
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        super().__init__(f"Service request failed with HTTP {status_code}.")
+
+
 class NoRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, request, file_pointer, code, message, headers, new_url):
         return None
@@ -214,7 +222,7 @@ def request_json(
             result = json.loads(raw.decode("utf-8"))
     except HTTPError as exc:
         _log_hub_request(request_id, method, route_template, exc.code, "http_error")
-        raise BridgeError(f"Service request failed with HTTP {exc.code}.") from None
+        raise HubHTTPError(exc.code) from None
     except (URLError, TimeoutError, OSError):
         _log_hub_request(request_id, method, route_template, None, "transport_error")
         raise BridgeError("A required service is unavailable or unreachable.") from None
@@ -264,10 +272,16 @@ class LocalBridge:
         except Exception as exc:
             raise BridgeError("Could not securely store Hub credentials in the OS credential store.") from exc
 
-    def _hub_request(self, path: str, method: str = "GET", payload: dict[str, Any] | None = None,
-                     access_token: str | None = None,
-                     extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
-        request_id = str(uuid4())
+    def _hub_request(
+        self,
+        path: str,
+        method: str = "GET",
+        payload: dict[str, Any] | None = None,
+        access_token: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        request_id = request_id or str(uuid4())
         headers = {"Content-Type": "application/json"}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
@@ -317,26 +331,60 @@ class LocalBridge:
         })
         return "اتصال امن به HUB محلی برقرار شد. اعتبارنامه‌ها فقط در OS Keyring ذخیره شدند. ✨"
 
+    def _refresh_session(self, session: dict[str, Any]) -> None:
+        refreshed = self._hub_request(
+            "/integrations/telegram/refresh",
+            "POST",
+            {
+                "refresh_token": session["refresh_token"],
+                "telegram_user_id": self.config.telegram_owner_id,
+            },
+        )
+        if not refreshed.get("access_token"):
+            raise BridgeError("HUB نتوانست نشست کلاینت را تمدید کند؛ اتصال را بررسی یا دوباره جفت‌سازی کن.")
+        session["access_token"] = refreshed["access_token"]
+        session["access_expires_at"] = int(time.time()) + int(refreshed.get("expires_in", 900))
+        session["scopes"] = refreshed.get("scopes", session.get("scopes", []))
+        self._save_hub_session(session)
+
     def _session(self) -> dict[str, Any] | None:
         session = self._load_hub_session()
         if not session:
             return None
         if int(session.get("access_expires_at", 0)) <= int(time.time()) + 30:
-            refreshed = self._hub_request(
-                "/integrations/telegram/refresh",
-                "POST",
-                {
-                    "refresh_token": session["refresh_token"],
-                    "telegram_user_id": self.config.telegram_owner_id,
-                },
-            )
-            if not refreshed.get("access_token"):
-                raise BridgeError("HUB نتوانست نشست کلاینت را تمدید کند؛ اتصال را بررسی یا دوباره جفت‌سازی کن.")
-            session["access_token"] = refreshed["access_token"]
-            session["access_expires_at"] = int(time.time()) + int(refreshed.get("expires_in", 900))
-            session["scopes"] = refreshed.get("scopes", session.get("scopes", []))
-            self._save_hub_session(session)
+            self._refresh_session(session)
         return session
+
+    def _hub_authenticated_request(
+        self,
+        path: str,
+        session: dict[str, Any],
+        method: str = "GET",
+        payload: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        request_id = str(uuid4())
+        try:
+            return self._hub_request(
+                path,
+                method,
+                payload,
+                access_token=session["access_token"],
+                extra_headers=extra_headers,
+                request_id=request_id,
+            )
+        except HubHTTPError as exc:
+            if exc.status_code != 401:
+                raise
+        self._refresh_session(session)
+        return self._hub_request(
+            path,
+            method,
+            payload,
+            access_token=session["access_token"],
+            extra_headers=extra_headers,
+            request_id=request_id,
+        )
 
     def _signed_worker_post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
