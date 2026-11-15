@@ -5,6 +5,7 @@ from uuid import UUID
 
 from bridge import (
     BridgeError,
+    HubHTTPError,
     LocalBridge,
     request_json,
     sign_request,
@@ -138,7 +139,9 @@ class TaskSubmissionTests(unittest.TestCase):
         bridge = self._bridge(["status:read", "tasks:create"])
         calls = []
 
-        def hub_request(path, method="GET", payload=None, access_token=None, extra_headers=None):
+        def hub_request(
+            path, method="GET", payload=None, access_token=None, extra_headers=None, request_id=None
+        ):
             calls.append((path, method, payload, access_token, extra_headers))
             return {
                 "task_id": "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2",
@@ -313,6 +316,91 @@ class HubRequestLoggingTests(unittest.TestCase):
             "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
             captured.output[0],
         )
+
+
+class HubUnauthorizedRecoveryTests(unittest.TestCase):
+    def _bridge(self):
+        bridge = LocalBridge.__new__(LocalBridge)
+        bridge.config = type("Config", (), {
+            "client_id": "3a1c9d72-6f84-4b35-9e21-7d0c8a6f4b52",
+            "telegram_owner_id": 123456789,
+        })()
+        bridge.keyring = FakeKeyring()
+        return bridge
+
+    def test_401_refresh_retries_once_with_original_request_id(self):
+        bridge = self._bridge()
+        session = {
+            "access_token": "expired-access",
+            "refresh_token": "refresh-secret",
+            "access_expires_at": 1794400900,
+            "scopes": ["tasks:create"],
+        }
+        calls = []
+
+        def hub_request(
+            path, method="GET", payload=None, access_token=None,
+            extra_headers=None, request_id=None,
+        ):
+            calls.append((path, method, access_token, request_id, extra_headers))
+            if path == "/integrations/telegram/refresh":
+                return {
+                    "access_token": "renewed-access",
+                    "expires_in": 900,
+                    "scopes": ["tasks:create"],
+                }
+            if access_token == "expired-access":
+                raise HubHTTPError(401)
+            return {"accepted": True}
+
+        bridge._hub_request = hub_request
+        result = bridge._hub_authenticated_request(
+            "/integrations/telegram/tasks",
+            session,
+            "POST",
+            {"task_type": "analysis.summarize", "description": "safe"},
+            {"Idempotency-Key": "telegram-update-12345"},
+        )
+
+        self.assertEqual(result, {"accepted": True})
+        self.assertEqual(len(calls), 3)
+        original_id = calls[0][3]
+        refresh_id = calls[1][3]
+        retry_id = calls[2][3]
+        self.assertEqual(original_id, retry_id)
+        self.assertNotEqual(original_id, refresh_id)
+        self.assertEqual(calls[0][2], "expired-access")
+        self.assertEqual(calls[1][0], "/integrations/telegram/refresh")
+        self.assertIsNone(calls[1][2])
+        self.assertEqual(calls[2][2], "renewed-access")
+        self.assertEqual(calls[0][4], {"Idempotency-Key": "telegram-update-12345"})
+        self.assertEqual(calls[2][4], {"Idempotency-Key": "telegram-update-12345"})
+        self.assertEqual(session["access_token"], "renewed-access")
+
+    def test_second_401_is_not_retried_again(self):
+        bridge = self._bridge()
+        session = {
+            "access_token": "expired-access",
+            "refresh_token": "refresh-secret",
+            "access_expires_at": 1794400900,
+            "scopes": ["tasks:read"],
+        }
+        calls = []
+
+        def hub_request(path, method="GET", payload=None, access_token=None,
+                        extra_headers=None, request_id=None):
+            calls.append((path, request_id))
+            if path == "/integrations/telegram/refresh":
+                return {"access_token": "renewed-access", "expires_in": 900}
+            raise HubHTTPError(401)
+
+        bridge._hub_request = hub_request
+        with self.assertRaises(HubHTTPError):
+            bridge._hub_authenticated_request("/integrations/telegram/status", session)
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[0][1], calls[2][1])
+        self.assertNotEqual(calls[0][1], calls[1][1])
 
 
 if __name__ == "__main__":
