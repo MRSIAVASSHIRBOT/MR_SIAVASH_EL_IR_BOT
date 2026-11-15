@@ -206,10 +206,11 @@ def request_json(
     opener = build_opener(NoRedirectHandler())
     try:
         with opener.open(request, timeout=10) as response:
+            status_code = response.status
             raw = response.read(MAX_RESPONSE_BYTES + 1)
             if len(raw) > MAX_RESPONSE_BYTES:
+                _log_hub_request(request_id, method, route_template, status_code, "invalid_response")
                 raise BridgeError("A remote response exceeded the configured size limit.")
-            status_code = response.status
             result = json.loads(raw.decode("utf-8"))
     except HTTPError as exc:
         _log_hub_request(request_id, method, route_template, exc.code, "http_error")
