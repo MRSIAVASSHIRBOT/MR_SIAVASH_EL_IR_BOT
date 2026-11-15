@@ -199,7 +199,9 @@ class TaskResultTests(unittest.TestCase):
         bridge = self._bridge(["tasks:result"])
         calls = []
 
-        def hub_request(path, method="GET", payload=None, access_token=None, extra_headers=None):
+        def hub_request(
+            path, method="GET", payload=None, access_token=None, extra_headers=None, request_id=None
+        ):
             calls.append((path, method, access_token))
             return {"result": {"message": "completed"}, "error_code": None, "attempt_count": 1}
 
