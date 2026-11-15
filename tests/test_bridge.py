@@ -1,5 +1,7 @@
 import json
 import unittest
+from unittest.mock import patch
+from uuid import UUID
 
 from bridge import (
     BridgeError,
@@ -219,6 +221,36 @@ class TaskResultTests(unittest.TestCase):
         self.assertIn("tasks:result", denied)
         self.assertIn("شناسه کار معتبر نیست", invalid)
         self.assertEqual(calls, [])
+
+
+
+class HubRequestCorrelationTests(unittest.TestCase):
+    def test_hub_request_sends_a_fresh_canonical_uuid_request_id(self):
+        bridge = LocalBridge.__new__(LocalBridge)
+        bridge.config = type("Config", (), {
+            "hub_base_url": "http://127.0.0.1:8000",
+            "telegram_owner_id": 123456789,
+        })()
+        calls = []
+
+        def capture(url, method, body, headers):
+            calls.append((url, method, body, headers))
+            return {"ok": True}
+
+        with patch("bridge.request_json", side_effect=capture):
+            first = bridge._hub_request("/health")
+            second = bridge._hub_request("/health")
+
+        self.assertEqual(first, {"ok": True})
+        self.assertEqual(second, {"ok": True})
+        self.assertEqual(len(calls), 2)
+        first_id = calls[0][3]["X-Request-ID"]
+        second_id = calls[1][3]["X-Request-ID"]
+        self.assertEqual(str(UUID(first_id)), first_id)
+        self.assertEqual(str(UUID(second_id)), second_id)
+        self.assertNotEqual(first_id, second_id)
+        self.assertEqual(calls[0][0], "http://127.0.0.1:8000/health")
+        self.assertEqual(calls[0][1], "GET")
 
 
 if __name__ == "__main__":
