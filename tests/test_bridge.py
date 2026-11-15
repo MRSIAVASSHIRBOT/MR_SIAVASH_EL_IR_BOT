@@ -110,5 +110,69 @@ class CredentialStoreTests(unittest.TestCase):
         self.assertEqual(json.loads(stored)["scopes"], ["status:read"])
 
 
+class TaskSubmissionTests(unittest.TestCase):
+    def _bridge(self, scopes):
+        bridge = LocalBridge.__new__(LocalBridge)
+        bridge.config = type("Config", (), {"telegram_owner_id": 123456789})()
+        bridge._session = lambda: {"access_token": "access-secret", "scopes": scopes}
+        return bridge
+
+    def _job(self, **overrides):
+        payload = {
+            "command": "task",
+            "task_type": "analysis.summarize",
+            "description": "Summarize the project status",
+            "idempotency_key": "telegram-update-12345",
+        }
+        payload.update(overrides)
+        return {
+            "telegram_user_id": 123456789,
+            "chat_id": 123456789,
+            "payload": payload,
+        }
+
+    def test_task_submission_uses_hub_policy_endpoint_and_idempotency(self):
+        bridge = self._bridge(["status:read", "tasks:create"])
+        calls = []
+
+        def hub_request(path, method="GET", payload=None, access_token=None, extra_headers=None):
+            calls.append((path, method, payload, access_token, extra_headers))
+            return {
+                "task_id": "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2",
+                "status": "waiting_approval",
+                "risk_class": "high",
+            }
+
+        bridge._hub_request = hub_request
+        reply = bridge.process_job(self._job())
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "/integrations/telegram/tasks")
+        self.assertEqual(calls[0][1], "POST")
+        self.assertEqual(calls[0][2], {
+            "task_type": "analysis.summarize",
+            "description": "Summarize the project status",
+        })
+        self.assertEqual(calls[0][3], "access-secret")
+        self.assertEqual(calls[0][4], {"Idempotency-Key": "telegram-update-12345"})
+        self.assertIn("تأیید مالک", reply)
+        self.assertNotIn("access-secret", reply)
+
+    def test_task_submission_requires_explicit_scope(self):
+        bridge = self._bridge(["status:read"])
+        calls = []
+        bridge._hub_request = lambda *args, **kwargs: calls.append((args, kwargs))
+        reply = bridge.process_job(self._job())
+        self.assertIn("tasks:create", reply)
+        self.assertEqual(calls, [])
+
+    def test_task_submission_rejects_invalid_payload_before_hub_request(self):
+        bridge = self._bridge(["tasks:create"])
+        calls = []
+        bridge._hub_request = lambda *args, **kwargs: calls.append((args, kwargs))
+        reply = bridge.process_job(self._job(idempotency_key="short"))
+        self.assertIn("شناسه یکتای درخواست", reply)
+        self.assertEqual(calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

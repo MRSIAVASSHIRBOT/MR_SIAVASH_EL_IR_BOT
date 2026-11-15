@@ -8,6 +8,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import time
@@ -228,11 +229,14 @@ class LocalBridge:
             raise BridgeError("Could not securely store Hub credentials in the OS credential store.") from exc
 
     def _hub_request(self, path: str, method: str = "GET", payload: dict[str, Any] | None = None,
-                     access_token: str | None = None) -> dict[str, Any]:
+                     access_token: str | None = None,
+                     extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
         headers = {"Content-Type": "application/json"}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
             headers["X-Telegram-User-Id"] = str(self.config.telegram_owner_id)
+        if extra_headers:
+            headers.update(extra_headers)
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8") if payload is not None else None
         return request_json(self.config.hub_base_url + path, method, body, headers)
 
@@ -349,6 +353,35 @@ class LocalBridge:
                     description = str(task.get("description") or task.get("task_type") or "کار")[:160]
                     lines.append(f"{index}. {description} — {task.get('status', 'نامشخص')}")
                 return "\n".join(lines)
+            if command == "task":
+                if "tasks:create" not in session.get("scopes", []):
+                    return "مجوز tasks:create برای این ربات صادر نشده است. سطح دسترسی را از پنل HUB مدیریت کن."
+                task_type = payload.get("task_type")
+                description = payload.get("description")
+                idempotency_key = payload.get("idempotency_key")
+                if not isinstance(task_type, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", task_type):
+                    return "نوع کار معتبر نیست."
+                if not isinstance(description, str) or not description.strip() or len(description) > 500:
+                    return "شرح کار باید بین ۱ تا ۵۰۰ نویسه باشد."
+                if not isinstance(idempotency_key, str) or not re.fullmatch(r"[!-~]{8,255}", idempotency_key):
+                    return "شناسه یکتای درخواست معتبر نیست؛ دوباره فرمان را ارسال کن."
+                created = self._hub_request(
+                    "/integrations/telegram/tasks",
+                    "POST",
+                    {"task_type": task_type, "description": description.strip()},
+                    access_token=headers_token,
+                    extra_headers={"Idempotency-Key": idempotency_key},
+                )
+                task_id = created.get("task_id", "نامشخص")
+                status = created.get("status", "نامشخص")
+                risk = created.get("risk_class", "نامشخص")
+                if status == "waiting_approval":
+                    state_text = "برای بررسی و تأیید مالک در HUB ثبت شد؛ از طریق ربات تأیید نمی‌شود."
+                elif status == "queued":
+                    state_text = "پس از ارزیابی سیاست HUB در صف قرار گرفت."
+                else:
+                    state_text = f"وضعیت فعلی: {status}"
+                return f"کار در HUB ثبت شد.\nشناسه: {task_id}\nنوع: {task_type}\nریسک: {risk}\n{state_text}"
             return "این فرمان در Bridge تعریف نشده است."
         except BridgeError as exc:
             return str(exc)

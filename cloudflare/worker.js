@@ -220,7 +220,7 @@ async function handleTelegramMessage(env, update) {
     return;
   }
   if (command === "/help") {
-    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pairinfo — اطلاعات جفت‌سازی\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)");
+    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pairinfo — اطلاعات جفت‌سازی\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)\n/task TYPE | DESCRIPTION — ثبت کار از مسیر سیاست HUB (نیازمند tasks:create)");
     return;
   }
   if (command === "/id") {
@@ -255,6 +255,32 @@ async function handleTelegramMessage(env, update) {
       return;
     }
     const queued = await enqueueJob(env, update.update_id, chatId, userId, { command: command.slice(1) });
+    if (!queued) await sendMessage(env, chatId, "صف درخواست‌ها موقتاً پر است؛ کمی بعد دوباره تلاش کن.");
+    return;
+  }
+  if (command === "/task") {
+    if (validateBridgeEnvironment(env)) {
+      await sendMessage(env, chatId, "اتصال HUB هنوز پیکربندی نشده است؛ فرمان‌های ابری ربات مستقل از این بخش فعال می‌مانند.");
+      return;
+    }
+    const input = args.join(" ");
+    const separator = input.indexOf("|");
+    if (separator < 1) {
+      await sendMessage(env, chatId, "فرمت صحیح: /task نوع.کار | شرح کار");
+      return;
+    }
+    const taskType = input.slice(0, separator).trim();
+    const description = input.slice(separator + 1).trim();
+    if (!/^[A-Za-z0-9_.-]{1,80}$/.test(taskType) || !description || description.length > 500) {
+      await sendMessage(env, chatId, "نوع کار باید ۱ تا ۸۰ نویسهٔ لاتین معتبر و شرح کار ۱ تا ۵۰۰ نویسه باشد.");
+      return;
+    }
+    const queued = await enqueueJob(env, update.update_id, chatId, userId, {
+      command: "task",
+      task_type: taskType,
+      description,
+      idempotency_key: "telegram-update-" + update.update_id,
+    });
     if (!queued) await sendMessage(env, chatId, "صف درخواست‌ها موقتاً پر است؛ کمی بعد دوباره تلاش کن.");
     return;
   }

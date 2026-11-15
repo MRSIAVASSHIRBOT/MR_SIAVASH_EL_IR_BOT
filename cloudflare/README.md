@@ -103,8 +103,9 @@ Hub access tokens expire after 15 minutes; refresh credentials expire after 30 d
 ## Telegram commands
 
 - `/start`, `/help`, `/id`, `/pairinfo`: handled at the Worker edge and work without a running local Bridge.
-- `/pair CODE`, `/status`, `/tasks`: encrypted/queued for the optional local Bridge. If Bridge configuration is absent, the bot responds that HUB integration is not configured instead of failing the webhook.
-- No arbitrary shell execution, tool invocation, task creation, agent execution, approval decisions, or content publishing is exposed.
+- `/pair CODE`, `/status`, `/tasks`, `/task TYPE | DESCRIPTION`: encrypted/queued for the optional local Bridge. If Bridge configuration is absent, the bot responds that HUB integration is not configured instead of failing the webhook.
+- `/task` requires the explicitly granted `tasks:create` scope. The Hub classifies task risk server-side; low-risk types may be queued, while unknown/high-risk types remain `waiting_approval`. The bot cannot approve or bypass that state. Each Telegram update receives a stable idempotency key to prevent duplicate task creation on retries.
+- No arbitrary shell execution, tool invocation, direct agent execution, approval decisions, or content publishing is exposed. Task submission is restricted to the Hub's policy-evaluated endpoint and explicit `tasks:create` scope.
 
 ## Webhook registration
 
