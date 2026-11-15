@@ -6,6 +6,7 @@ from uuid import UUID
 from bridge import (
     BridgeError,
     LocalBridge,
+    request_json,
     sign_request,
     signing_message,
     validate_hub_url,
@@ -288,22 +289,28 @@ class HubRequestLoggingTests(unittest.TestCase):
         with patch("bridge.build_opener", return_value=opener), self.assertLogs(
             "mr_siavash_bridge", level="INFO"
         ) as captured:
-            result = __import__("bridge").request_json(
-                    "http://127.0.0.1:8000/integrations/telegram/tasks/"
-                    "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
-                    "GET",
-                    headers={"X-Request-ID": request_id},
-                    request_id=request_id,
-                    route_template="/integrations/telegram/tasks/{task_id}/result",
-                )
+            result = request_json(
+                "http://127.0.0.1:8000/integrations/telegram/tasks/"
+                "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
+                "GET",
+                headers={"X-Request-ID": request_id},
+                request_id=request_id,
+                route_template="/integrations/telegram/tasks/{task_id}/result",
+            )
 
         self.assertEqual(result, {"accepted": True})
         self.assertIn(f"request_id={request_id}", captured.output[0])
         self.assertIn("method=GET", captured.output[0])
         self.assertIn("status_code=201", captured.output[0])
         self.assertIn("outcome=success", captured.output[0])
-        self.assertIn("route_template=/integrations/telegram/tasks/{task_id}/result", captured.output[0])
-        self.assertNotIn("c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result", captured.output[0])
+        self.assertIn(
+            "route_template=/integrations/telegram/tasks/{task_id}/result",
+            captured.output[0],
+        )
+        self.assertNotIn(
+            "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
+            captured.output[0],
+        )
 
 
 if __name__ == "__main__":
