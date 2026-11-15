@@ -212,8 +212,8 @@ test("/help lists each supported command exactly once", async () => {
     assert.ok(sentMessage);
     const taskResultEntries = sentMessage.text.split("\\n").filter((line) => line.startsWith("/taskresult "));
     assert.equal(taskResultEntries.length, 1);
-    assert.match(sentMessage.text, /\\/task TYPE \\| DESCRIPTION/);
-    assert.match(sentMessage.text, /\\/taskresult UUID/);
+    assert.ok(sentMessage.text.includes("/task TYPE | DESCRIPTION"));
+    assert.ok(sentMessage.text.includes("/taskresult UUID"));
   } finally {
     globalThis.fetch = previousFetch;
   }
