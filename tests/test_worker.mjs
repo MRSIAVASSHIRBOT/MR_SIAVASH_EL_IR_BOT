@@ -295,3 +295,101 @@ test("Telegram edge readiness is unaffected by malformed optional Bridge configu
     service: "mr-siavash-el-ir-bot-edge",
   });
 });
+
+
+function jobQueueDb(captured) {
+  return {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            first: async () => sql.includes("INSERT INTO telegram_processed_updates")
+              ? { update_id: values[0] }
+              : null,
+            run: async () => {
+              if (sql.includes("INSERT OR IGNORE INTO telegram_jobs")) captured.push(values);
+              return { success: true, meta: { changes: sql.includes("INSERT OR IGNORE INTO telegram_jobs") ? 1 : 0 } };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+test("/task queues an encrypted policy-gated Hub request with a stable idempotency key", async () => {
+  const captured = [];
+  const env = { ...bridgeEnv, DB: jobQueueDb(captured) };
+  const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+    },
+    body: JSON.stringify({
+      update_id: 12345,
+      message: {
+        from: { id: 123456789 },
+        chat: { id: 123456789, type: "private" },
+        text: "/task analysis.summarize | Summarize the current project status",
+      },
+    }),
+  }), env);
+
+  assert.equal(response.status, 200);
+  assert.equal(captured.length, 1);
+  const [jobId, updateId, chatId, userId, encryptedPayload] = captured[0];
+  assert.ok(jobId);
+  assert.equal(updateId, 12345);
+  assert.equal(chatId, 123456789);
+  assert.equal(userId, 123456789);
+  assert.equal(typeof encryptedPayload, "string");
+  assert.equal(encryptedPayload.includes("Summarize the current project status"), false);
+
+  const record = JSON.parse(encryptedPayload);
+  const keyBytes = Uint8Array.from(atob(bridgeEnv.QUEUE_ENCRYPTION_KEY.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: new Uint8Array(record.iv) },
+    key,
+    new Uint8Array(record.ciphertext),
+  );
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(plaintext)), {
+    command: "task",
+    task_type: "analysis.summarize",
+    description: "Summarize the current project status",
+    idempotency_key: "telegram-update-12345",
+  });
+});
+
+test("/task rejects malformed input without enqueueing a Hub job", async () => {
+  const captured = [];
+  let sentMessage = null;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => {
+    sentMessage = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://worker.example/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": bridgeEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        update_id: 12346,
+        message: {
+          from: { id: 123456789 },
+          chat: { id: 123456789, type: "private" },
+          text: "/task invalid input without delimiter",
+        },
+      }),
+    }), { ...bridgeEnv, DB: jobQueueDb(captured) });
+    assert.equal(response.status, 200);
+    assert.equal(captured.length, 0);
+    assert.match(sentMessage.text, /فرمت صحیح/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
