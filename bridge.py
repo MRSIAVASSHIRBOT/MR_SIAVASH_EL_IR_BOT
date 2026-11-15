@@ -19,6 +19,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from uuid import uuid4
 
 LOGGER = logging.getLogger("mr_siavash_bridge")
 SERVICE_NAME = "MR_SIAVASH_EL_IR_BOT"
@@ -231,7 +232,8 @@ class LocalBridge:
     def _hub_request(self, path: str, method: str = "GET", payload: dict[str, Any] | None = None,
                      access_token: str | None = None,
                      extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
-        headers = {"Content-Type": "application/json"}
+        request_id = str(uuid4())
+        headers = {"Content-Type": "application/json", "X-Request-ID": request_id}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
             headers["X-Telegram-User-Id"] = str(self.config.telegram_owner_id)
