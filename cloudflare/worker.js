@@ -220,7 +220,7 @@ async function handleTelegramMessage(env, update) {
     return;
   }
   if (command === "/help") {
-    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pairinfo — اطلاعات جفت‌سازی\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)\n/task TYPE | DESCRIPTION — ثبت کار از مسیر سیاست HUB (نیازمند tasks:create)\n/taskresult UUID — دریافت نتیجه نهایی کار (نیازمند tasks:result)");
+    await sendMessage(env, chatId, "فرمان‌ها:\n/start — شروع\n/help — راهنما\n/id — شناسه تلگرام\n/pairinfo — اطلاعات جفت‌سازی\n/pair CODE — جفت‌سازی با HUB محلی\n/status — وضعیت HUB\n/tasks — فهرست کارها (در صورت داشتن مجوز)\n/task TYPE | DESCRIPTION — ثبت کار از مسیر سیاست HUB (نیازمند tasks:create)\n/taskresult UUID — دریافت نتیجه نهایی کار (نیازمند tasks:result)\n/taskresult UUID — دریافت نتیجه نهایی کار (نیازمند tasks:result)");
     return;
   }
   if (command === "/id") {
