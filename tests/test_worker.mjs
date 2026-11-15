@@ -210,7 +210,7 @@ test("/help lists each supported command exactly once", async () => {
     }), telegramOnlyEnv());
     assert.equal(response.status, 200);
     assert.ok(sentMessage);
-    const taskResultEntries = sentMessage.text.split("\\n").filter((line) => line.startsWith("/taskresult "));
+    const taskResultEntries = sentMessage.text.split("\n").filter((line) => line.startsWith("/taskresult "));
     assert.equal(taskResultEntries.length, 1);
     assert.ok(sentMessage.text.includes("/task TYPE | DESCRIPTION"));
     assert.ok(sentMessage.text.includes("/taskresult UUID"));
