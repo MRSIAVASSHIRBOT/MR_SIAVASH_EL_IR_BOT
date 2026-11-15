@@ -268,12 +268,13 @@ class LocalBridge:
                      access_token: str | None = None,
                      extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
         request_id = str(uuid4())
-        headers = {"Content-Type": "application/json", "X-Request-ID": request_id}
+        headers = {"Content-Type": "application/json"}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
             headers["X-Telegram-User-Id"] = str(self.config.telegram_owner_id)
         if extra_headers:
             headers.update(extra_headers)
+        headers["X-Request-ID"] = request_id
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8") if payload is not None else None
         route_path = urlsplit(path).path
         route_templates = {
