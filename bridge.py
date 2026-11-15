@@ -429,11 +429,10 @@ class LocalBridge:
             session = self._session()
             if not session:
                 return "هنوز به HUB متصل نشده‌ای. ابتدا از پنل محلی HUB کد یک‌بارمصرف بساز و سپس /pair CODE را ارسال کن."
-            headers_token = session["access_token"]
             if command == "status":
-                status = self._hub_request(
+                status = self._hub_authenticated_request(
                     "/integrations/telegram/status",
-                    access_token=headers_token,
+                    session=session,
                 )
                 scopes = status.get("scopes", [])
                 return (
@@ -444,9 +443,9 @@ class LocalBridge:
             if command == "tasks":
                 if "tasks:read" not in session.get("scopes", []):
                     return "مجوز tasks:read برای این ربات صادر نشده است. سطح دسترسی را از پنل HUB مدیریت کن."
-                result = self._hub_request(
+                result = self._hub_authenticated_request(
                     "/integrations/telegram/tasks?limit=10",
-                    access_token=headers_token,
+                    session=session,
                 )
                 tasks = result.get("tasks", [])
                 if not tasks:
@@ -469,11 +468,11 @@ class LocalBridge:
                     return "شرح کار باید بین ۱ تا ۵۰۰ نویسه باشد."
                 if not isinstance(idempotency_key, str) or not re.fullmatch(r"[!-~]{8,255}", idempotency_key):
                     return "شناسه یکتای درخواست معتبر نیست؛ دوباره فرمان را ارسال کن."
-                created = self._hub_request(
+                created = self._hub_authenticated_request(
                     "/integrations/telegram/tasks",
+                    session,
                     "POST",
                     {"task_type": task_type, "description": description.strip()},
-                    access_token=headers_token,
                     extra_headers={"Idempotency-Key": idempotency_key},
                 )
                 task_id = created.get("task_id", "نامشخص")
@@ -495,9 +494,9 @@ class LocalBridge:
                     task_id,
                 ):
                     return "شناسه کار معتبر نیست."
-                result = self._hub_request(
+                result = self._hub_authenticated_request(
                     f"/integrations/telegram/tasks/{task_id}/result",
-                    access_token=headers_token,
+                    session=session,
                 )
                 rendered = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
                 if len(rendered) > 3500:
