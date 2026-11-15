@@ -285,9 +285,10 @@ class HubRequestLoggingTests(unittest.TestCase):
 
         request_id = "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2"
         opener = FakeOpener()
-        with patch("bridge.build_opener", return_value=opener):
-            with self.assertLogs("mr_siavash_bridge", level="INFO") as captured:
-                result = __import__("bridge").request_json(
+        with patch("bridge.build_opener", return_value=opener), self.assertLogs(
+            "mr_siavash_bridge", level="INFO"
+        ) as captured:
+            result = __import__("bridge").request_json(
                     "http://127.0.0.1:8000/integrations/telegram/tasks/"
                     "c9d78b6a-18c8-4e76-a8b1-49f09a9ec1e2/result",
                     "GET",
